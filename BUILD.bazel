@@ -6,6 +6,6 @@ exports_files([
 
 compile_pip_requirements(
     name = "requirements",
-    src = "requirements.in",
+    src = "requirements.txt",
     requirements_txt = "requirements_lock.txt",
 )
