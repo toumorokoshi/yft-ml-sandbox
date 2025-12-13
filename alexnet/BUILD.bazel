@@ -6,6 +6,7 @@ py_binary(
     deps = [
         "@pypi//torch",
         "@pypi//torchvision",
+        "@pypi//scipy",
     ],
     visibility = ["//visibility:public"],
 )
