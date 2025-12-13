@@ -1,0 +1,18 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+py_binary(
+    name = "example",
+    srcs = ["example.py"],
+    deps = [
+        "@pip//torch",
+        "@pip//torch_mlir",
+        "@pip//iree_turbine",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+sh_binary(
+    name = "bootstrap",
+    srcs = ["booststrap.sh"],
+    visibility = ["//visibility:public"],
+)

@@ -1,0 +1,3 @@
+# Bazel ignore patterns
+bazel-*
+.bazelrc.user
