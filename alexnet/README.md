@@ -24,3 +24,10 @@ This is a (WIP) attempt to recreate the AlexNet paper.
 | 11%      | 10     | 16         | 0.01          | no       | 0.9      |
 | 9.9%     | 10     | 16         | 0.001         | no       | 0        |
 | 0%       | 10     | 16         | 0.1           | yes      | 0        |
+
+- layers of size 38416 / 2, then 512
+
+| Accuracy | Epochs | Batch Size | Learning Rate | Shuffled | Momentum |
+| -------- | ------ | ---------- | ------------- | -------- | -------- |
+| 44.0%    | 20     | 32         | 0.01          | yes      | 0        |
+| 41.1%    | 10     | 32         | 0.01          | yes      | 0        |

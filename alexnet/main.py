@@ -64,7 +64,7 @@ def main(argv: list[str]) -> None:
     model = NeuralNetwork().to(device)
     print(f"Model structure: {model}")
     optimizer = torch.optim.SGD(model.parameters(), lr=1e-3, momentum=0.9)
-    epochs = 10
+    epochs = 20
     model.train()
     for t in range(epochs):
         print(f"Epoch {t+1}\n-------------------------------")
@@ -119,7 +119,7 @@ class NeuralNetwork(nn.Module):
     def __init__(self):
         super().__init__()
         self.flatten = nn.Flatten()
-        middle_layer_size = 28 * 28 * 28 // 16  # results in ~ 2gb
+        middle_layer_size = 28 * 28 * 28 // 32  # results in ~ 2gb
         self.linear_relu_stack = nn.Sequential(
             nn.Linear(IMAGE_HEIGHT * IMAGE_WIDTH * 3, middle_layer_size),
             nn.ReLU(),
