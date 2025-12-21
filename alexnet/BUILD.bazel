@@ -4,6 +4,7 @@ py_binary(
     name = "main",
     srcs = ["main.py"],
     deps = [
+        "@pypi//asciichartpy",
         "@pypi//torch",
         "@pypi//torchvision",
         "@pypi//scipy",
