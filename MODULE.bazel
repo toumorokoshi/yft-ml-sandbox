@@ -18,5 +18,6 @@ pip.parse(
     requirements_lock = "//:requirements_lock.txt",
     python_version = PYTHON_VERSION,
     hub_name = "pypi",
+    experimental_extra_index_urls = ["https://download.pytorch.org/whl/rocm6.2"],
 )
 use_repo(pip, "pypi")

@@ -1,0 +1,17 @@
+load("@rules_python//python:defs.bzl", "py_binary")
+
+py_binary(
+    name = "execute_model",
+    srcs = ["execute_model.py"],
+    deps = [
+        "@pypi//numpy",
+        # currently rocm does not work
+        # due to a shared object that must
+        # be executable but is not marked as such in the
+        # onnxruntime package.
+        # "@pypi//onnxruntime_rocm",
+    ],
+    env = {
+        "HSA_OVERRIDE_GFX_VERSION": "11.0.0",
+    }
+)

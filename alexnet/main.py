@@ -84,10 +84,9 @@ def train_model(args: argparse.Namespace) -> None:
     model = NeuralNetwork().to(device)
     print(f"Model structure: {model}")
     optimizer = torch.optim.SGD(
-        model.parameters(), lr=1e-3, momentum=0.9,
-        weight_decay=0.0005
+        model.parameters(), lr=1e-3, momentum=0.9, weight_decay=0.0005
     )
-    epochs = args.epochs if hasattr(args, 'epochs') else 60
+    epochs = args.epochs if hasattr(args, "epochs") else 60
     model.train()
     test_accuracies = []
     for t in range(epochs):
@@ -108,9 +107,14 @@ def train_model(args: argparse.Namespace) -> None:
 
 
 def export_model(args: argparse.Namespace) -> None:
-    print(f"Exporting model from {args.model_path} to {args.output_path}")
-    # TODO: Implement export functionality
-    pass
+    assert args.output_path.endswith(".onnx"), "Output path must end with .onnx"
+    print(f"Exporting model to {args.output_path}")
+    model = NeuralNetwork()
+    example_inputs = torch.randn(1, 3, IMAGE_HEIGHT, IMAGE_WIDTH)
+    onnx_program = torch.onnx.export(model, example_inputs, dynamo=True, strict=True)
+    import pdb
+
+    pdb.set_trace()
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -119,28 +123,15 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
     train_parser = subparsers.add_parser("train", help="Train the model")
     train_parser.add_argument(
-        "--epochs",
-        type=int,
-        default=60,
-        help="Number of training epochs (default: 60)"
+        "--epochs", type=int, default=60, help="Number of training epochs (default: 60)"
     )
     train_parser.add_argument(
-        "--save-model",
-        type=str,
-        default=None,
-        help="Path to save the trained model"
+        "--save-model", type=str, default=None, help="Path to save the trained model"
     )
 
     export_parser = subparsers.add_parser("export", help="Export a trained model")
     export_parser.add_argument(
-        "model_path",
-        type=str,
-        help="Path to the trained model file"
-    )
-    export_parser.add_argument(
-        "output_path",
-        type=str,
-        help="Path to save the exported model"
+        "output_path", type=str, help="Path to save the exported model"
     )
 
     args = parser.parse_args(argv[1:])
@@ -200,9 +191,7 @@ def test(dataloader, model, loss_fn, device) -> float:
             correct += (pred.argmax(1) == y).type(torch.float).sum().item()
     test_loss /= num_batches
     accuracy = 100 * (correct / size)
-    print(
-        f"Test Error: \n Accuracy: {(accuracy):>0.1f}%, Avg loss: {test_loss:>8f} \n"
-    )
+    print(f"Test Error: \n Accuracy: {(accuracy):>0.1f}%, Avg loss: {test_loss:>8f} \n")
     return accuracy
 
 
@@ -215,9 +204,9 @@ class NeuralNetwork(nn.Module):
         # conv_output_width = ((IMAGE_WIDTH - 11) // 4 + 1) - 4
         conv_features = [96, 256, 384, 384, 256]
         # conv_output_size = 52224 # with maxpool
-        conv_output_size = 38400 # with maxpool * 2
+        conv_output_size = 38400  # with maxpool * 2
         # conv_output_size = conv_features[-1] * conv_output_height * conv_output_width
-        #print(f"Conv output size: {conv_output_size}")
+        # print(f"Conv output size: {conv_output_size}")
         # TO TRY:
         # - maxpooling between conv layers
         self.conv_stack = nn.Sequential(
@@ -228,29 +217,37 @@ class NeuralNetwork(nn.Module):
             #   fewer points.
             # - the output is the number of channels desired.
             nn.Conv2d(3, conv_features[0], kernel_size=11, stride=4, padding=0),
-            # GELU vs SiLU vs ReLU
+            # ReLU vs SiLU vs ReLU
             # doesn't seem to change too much: 1-2%
-            nn.GELU(),
+            nn.ReLU(),
             nn.MaxPool2d(kernel_size=3, stride=2, padding=0),
-            nn.Conv2d(conv_features[0], conv_features[1], kernel_size=5, stride=1, padding=0),
-            nn.GELU(),
+            nn.Conv2d(
+                conv_features[0], conv_features[1], kernel_size=5, stride=1, padding=0
+            ),
+            nn.ReLU(),
             nn.MaxPool2d(kernel_size=3, stride=2, padding=0),
-            nn.Conv2d(conv_features[1], conv_features[2], kernel_size=3, stride=1, padding=0),
-            nn.GELU(),
-            nn.Conv2d(conv_features[2], conv_features[3], kernel_size=3, stride=1, padding=0),
-            nn.GELU(),
-            nn.Conv2d(conv_features[3], conv_features[4], kernel_size=3, stride=1, padding=0),
-            nn.GELU(),
+            nn.Conv2d(
+                conv_features[1], conv_features[2], kernel_size=3, stride=1, padding=0
+            ),
+            nn.ReLU(),
+            nn.Conv2d(
+                conv_features[2], conv_features[3], kernel_size=3, stride=1, padding=0
+            ),
+            nn.ReLU(),
+            nn.Conv2d(
+                conv_features[3], conv_features[4], kernel_size=3, stride=1, padding=0
+            ),
+            nn.ReLU(),
         )
 
         self.linear_stack = nn.Sequential(
             nn.Flatten(),
             nn.Dropout(0.5),
             nn.Linear(conv_output_size, 4096),
-            nn.GELU(),
+            nn.ReLU(),
             nn.Dropout(0.5),
             nn.Linear(4096, 4096),
-            nn.GELU(),
+            nn.ReLU(),
             # The last layer generally should be a linear layer, not an
             # activation function like a ReLU, which will bound the output
             # unnescessarily and impact the fidelity into a function like

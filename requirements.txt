@@ -1,10 +1,11 @@
 # named the non-bazel-standard "requirements.txt" to get
 # vscode to auto-detect this when creating a
 # virtual environment.
-torch==2.9.1
-torchvision==0.24.1
+--extra-index-url https://download.pytorch.org/whl/rocm6.4
+torch==2.9.1+rocm6.4
+torchvision==0.24.1+rocm6.4
 scipy==1.16.3
-nvidia-cuda-cupti-cu12==12.8.90
 asciichartpy==1.5.25
 onnx==1.20.0
 onnxscript==0.5.7
+onnxruntime-rocm==1.22.2post1

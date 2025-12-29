@@ -12,4 +12,7 @@ py_binary(
         "@pypi//scipy",
     ],
     visibility = ["//visibility:public"],
+    env = {
+        "HSA_OVERRIDE_GFX_VERSION": "11.0.0",
+    }
 )
