@@ -112,9 +112,6 @@ def export_model(args: argparse.Namespace) -> None:
     model = NeuralNetwork()
     example_inputs = torch.randn(1, 3, IMAGE_HEIGHT, IMAGE_WIDTH)
     onnx_program = torch.onnx.export(model, example_inputs, dynamo=True, strict=True)
-    import pdb
-
-    pdb.set_trace()
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -163,10 +160,64 @@ def train(dataloader, model, loss_fn, optimizer, device):
 
         # Compute prediction error
         pred = model(X)
+        pred.retain_grad()
         loss = loss_fn(pred, y)
+
+        # --- Per-sample gradient computation ---
+        # "Is it possible to examine the individual contribution?" -> Yes, using torch.func.vmap
+        from torch.func import functional_call, vmap, grad
+
+        # 1. Get raw params/buffers
+        params = dict(model.named_parameters())
+        buffers = dict(model.named_buffers())
+
+        # 2. Define a stateless helper that computes loss for a single sample
+        def compute_loss_stateless(params, buffers, sample, target):
+            # Add batch dimension of 1
+            batch = sample.unsqueeze(0)
+            targets = target.unsqueeze(0)
+
+            # Call model functionally using the passed params
+            pred = functional_call(model, (params, buffers), batch)
+            return loss_fn(pred, targets)
+
+        # 3. Transform to get gradients, then vector-map (vmap) over the batch
+        ft_compute_grad = grad(compute_loss_stateless)
+        ft_compute_sample_grad = vmap(ft_compute_grad, in_dims=(None, None, 0, 0), randomness="same")
+
+        # 4. Compute per-sample grads
+        # per_sample_grads is a dictionary: {param_name: tensor_of_shape_with_batch_dim}
+        per_sample_grads = ft_compute_sample_grad(params, buffers, X, y)
+
+        print("\n--- Per-Sample Gradient Inspection ---")
+        first_layer_name = 'conv_stack.0.weight'
+        if first_layer_name in per_sample_grads:
+            ps_grad = per_sample_grads[first_layer_name]
+            print(f"Per-sample gradient shape for {first_layer_name}: {ps_grad.shape}")
+            print(f" (BatchSize, Out, In, H, W) -> e.g. 1st image contribution: {ps_grad[0, 0, 0, :3, :3]}")
+        # ---------------------------------------
 
         # Backpropagation
         loss.backward()
+
+        # Print gradient of the first layer (conv_stack[0])
+        first_layer_weights = model.conv_stack[0].weight
+        print(f"\nFirst layer weight gradient shape: {first_layer_weights.grad.shape}")
+
+        # Flattening for similarity/vector operations
+        flattened_grad = first_layer_weights.grad.view(-1)
+        print(f"Flattened gradient shape: {flattened_grad.shape}")
+        # Example: calculating norm from the flattened vector (same as .norm() on the tensor)
+        print(f"Flattened L2 norm: {torch.linalg.vector_norm(flattened_grad)}")
+
+        import pdb; pdb.set_trace()
+
+        print(f"Gradient of Loss w.r.t. Prediction (dLoss/dPred):\n{pred.grad}")
+        # for name, param in model.named_parameters():
+        #      if param.grad is not None:
+        #          print(f"Gradient of {name} norm: {param.grad.norm().item()}")
+
+        # import pdb; pdb.set_trace()
         optimizer.step()
         optimizer.zero_grad()
 
