@@ -1,0 +1,11 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "alexnet_core",
+    srcs = ["model.py", "recipe.py"],
+    deps = [
+        "@pypi//torch",
+        "@pypi//torchvision",
+    ],
+    visibility = ["//visibility:public"],
+)

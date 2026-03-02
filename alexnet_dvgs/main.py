@@ -83,6 +83,78 @@ def train_model(args: argparse.Namespace) -> None:
     print("Done!")
 
 
+def run_dvgs(args: argparse.Namespace, model_cls=NeuralNetwork, transform=TEST_TRANSFORM) -> None:
+    print(f"Running DVGS with threshold {args.threshold} on {args.samples} samples...")
+    device = (
+        torch.accelerator.current_accelerator().type
+        if torch.accelerator.is_available()
+        else "cpu"
+    )
+    print(f"Using device: {device}")
+
+    model = model_cls().to(device)
+    if args.load_model:
+        model.load_state_dict(torch.load(args.load_model, weights_only=True))
+        print(f"Model loaded from {args.load_model}")
+    model.eval()
+
+    dataset = datasets.Imagenette(
+        root="data",
+        split="train",
+        size=SIZE,
+        download=True,
+        transform=transform,
+    )
+
+    # Use a small subset if samples < len(dataset)
+    if args.samples < len(dataset):
+        indices = torch.randperm(len(dataset))[: args.samples]
+        dataset = torch.utils.data.Subset(dataset, indices)
+
+    dataloader = DataLoader(dataset, batch_size=1)
+    loss_fn = nn.CrossEntropyLoss()
+
+    selected_indices = []
+    gradient_vectors = []
+
+    for i, (X, y) in enumerate(dataloader):
+        X, y = X.to(device), y.to(device)
+
+        model.zero_grad()
+        pred = model(X)
+        loss = loss_fn(pred, y)
+        loss.backward()
+
+        # Capture gradient of the 2nd to last linear layer (linear_stack[5])
+        grad = model.linear_stack[5].weight.grad
+        if grad is None:
+            continue
+
+        grad_vec = grad.flatten()
+
+        is_distinct = True
+        if gradient_vectors:
+            # Stack existing vectors for batch cosine similarity
+            ref_vectors = torch.stack(gradient_vectors)
+            similarities = torch.nn.functional.cosine_similarity(
+                grad_vec.unsqueeze(0), ref_vectors
+            )
+            if torch.any(similarities > args.threshold):
+                is_distinct = False
+
+        if is_distinct:
+            gradient_vectors.append(grad_vec.detach())
+            # For data.Subset, dataset.indices[i] gives the original index
+            original_idx = dataset.indices[i].item() if hasattr(dataset, "indices") else i
+            selected_indices.append(original_idx)
+            if len(selected_indices) % 10 == 0:
+                print(f"Found {len(selected_indices)} distinct data points so far...")
+
+    print("\nFinal set of representative data points (original indices):")
+    print(selected_indices)
+    print(f"Total selected: {len(selected_indices)} out of {len(dataset)}")
+
+
 def export_model(args: argparse.Namespace) -> None:
     assert args.output_path.endswith(".onnx"), "Output path must end with .onnx"
     print(f"Exporting model to {args.output_path}")
@@ -111,6 +183,23 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "output_path", type=str, help="Path to save the exported model"
     )
 
+    dvgs_parser = subparsers.add_parser("dvgs", help="Data Valuation using Gradients")
+    dvgs_parser.add_argument(
+        "--threshold",
+        type=float,
+        default=0.3,
+        help="Cosine similarity threshold (default: 0.3)",
+    )
+    dvgs_parser.add_argument(
+        "--samples",
+        type=int,
+        default=1000,
+        help="Number of samples to evaluate (default: 1000)",
+    )
+    dvgs_parser.add_argument(
+        "--load-model", type=str, default=None, help="Path to a pretrained model"
+    )
+
     args = parser.parse_args(argv[1:])
 
     if args.command is None:
@@ -128,11 +217,12 @@ def main(argv: list[str]) -> None:
         train_model(args)
     elif args.command == "export":
         export_model(args)
+    elif args.command == "dvgs":
+        run_dvgs(args)
     else:
         print(f"Unknown command: {args.command}")
         sys.exit(1)
 
 
 if __name__ == "__main__":
-    from alexnet_core.model import NeuralNetwork # Local import to avoid circular in core if any
     main(sys.argv)
