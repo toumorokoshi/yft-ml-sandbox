@@ -4,9 +4,9 @@ py_binary(
     name = "example",
     srcs = ["example.py"],
     deps = [
-        "@pip//torch",
-        "@pip//torch_mlir",
-        "@pip//iree_turbine",
+        "@pypi//torch",
+        "@pypi//torch_mlir",
+        "@pypi//iree_turbine",
     ],
     visibility = ["//visibility:public"],
 )

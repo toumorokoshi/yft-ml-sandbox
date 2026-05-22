@@ -5,13 +5,13 @@ module(
 
 bazel_dep(name = "rules_python", version = "0.36.0")
 
-PYTHON_VERSION = "3.11"
+PYTHON_VERSION = "3.12"
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
 python.toolchain(
     python_version = PYTHON_VERSION,
 )
-use_repo(python, "python_3_11")
+use_repo(python, "python_3_12")
 
 pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
 pip.parse(
@@ -21,3 +21,47 @@ pip.parse(
     experimental_extra_index_urls = ["https://download.pytorch.org/whl/rocm6.2"],
 )
 use_repo(pip, "pypi")
+
+bazel_dep(name = "rules_rust", version = "0.70.0")
+
+rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
+rust.toolchain(
+    edition = "2021",
+    versions = ["1.85.0"],
+)
+use_repo(rust, "rust_toolchains")
+
+crate = use_extension("@rules_rust//crate_universe:extensions.bzl", "crate")
+crate.spec(
+    package = "objc2",
+    version = "0.6.0",
+)
+crate.spec(
+    package = "objc2-foundation",
+    version = "0.3.0",
+    features = [
+        "std",
+        "alloc",
+        "NSString",
+        "NSArray",
+        "NSData",
+        "NSError",
+        "NSValue",
+    ],
+)
+crate.spec(
+    package = "objc2-metal",
+    version = "0.3.0",
+    features = [
+        "std",
+        "MTLDevice",
+        "MTLCommandQueue",
+        "MTLCommandBuffer",
+        "MTLComputeCommandEncoder",
+        "MTLComputePipeline",
+        "MTLBuffer",
+        "MTLLibrary",
+    ],
+)
+crate.from_specs()
+use_repo(crate, "crates")

@@ -41,8 +41,10 @@ env/
 
 # OS
 .DS_Store
-
 # ignore data downloaded by torch
 data
 # don't delete jj files
 .jj
+
+# Rust analyzer
+rust-project.json

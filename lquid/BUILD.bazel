@@ -1,0 +1,17 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary")
+
+rust_binary(
+    name = "main",
+    srcs = ["src/main.rs"],
+    edition = "2021",
+    deps = [
+        "@crates//:objc2",
+        "@crates//:objc2-foundation",
+        "@crates//:objc2-metal",
+    ],
+    rustc_flags = [
+        "-C", "link-arg=-framework", "-C", "link-arg=Metal",
+        "-C", "link-arg=-framework", "-C", "link-arg=CoreGraphics",
+    ],
+    visibility = ["//visibility:public"],
+)

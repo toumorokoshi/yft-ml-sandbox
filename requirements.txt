@@ -9,3 +9,6 @@ asciichartpy==1.5.25
 onnx==1.20.0
 onnxscript==0.5.7
 onnxruntime-rocm==1.22.2post1
+gymnasium==1.0.0
+highway-env==1.10.2
+matplotlib==3.10.0
