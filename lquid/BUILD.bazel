@@ -1,17 +1,26 @@
 load("@rules_rust//rust:defs.bzl", "rust_binary")
 
 rust_binary(
-    name = "main",
-    srcs = ["src/main.rs"],
+    name = "metal",
+    srcs = select({
+        "@platforms//os:macos": ["src/metal.rs"],
+        "//conditions:default": ["src/main_stub.rs"],
+    }),
     edition = "2021",
-    deps = [
-        "@crates//:objc2",
-        "@crates//:objc2-foundation",
-        "@crates//:objc2-metal",
-    ],
-    rustc_flags = [
-        "-C", "link-arg=-framework", "-C", "link-arg=Metal",
-        "-C", "link-arg=-framework", "-C", "link-arg=CoreGraphics",
-    ],
+    deps = select({
+        "@platforms//os:macos": [
+            "@crates//:objc2",
+            "@crates//:objc2-foundation",
+            "@crates//:objc2-metal",
+        ],
+        "//conditions:default": [],
+    }),
+    rustc_flags = select({
+        "@platforms//os:macos": [
+            "-C", "link-arg=-framework", "-C", "link-arg=Metal",
+            "-C", "link-arg=-framework", "-C", "link-arg=CoreGraphics",
+        ],
+        "//conditions:default": [],
+    }),
     visibility = ["//visibility:public"],
 )
