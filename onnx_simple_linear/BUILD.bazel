@@ -1,23 +1,32 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
-    name = "main_lib",
-    srcs = ["main.py"],
+    name = "model_lib",
+    srcs = [
+        "model.py",
+        "__init__.py",
+    ],
     deps = [
-        "//alexnet_core",
-        "@pypi//asciichartpy",
         "@pypi//onnx",
         "@pypi//onnxscript",
         "@pypi//torch",
-        "@pypi//torchvision",
-        "@pypi//scipy",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "main_lib",
+    srcs = ["main.py"],
+    deps = [
+        ":model_lib",
     ],
     visibility = ["//visibility:public"],
 )
 
 py_binary(
-    name = "main",
+    name = "export",
     srcs = ["main.py"],
+    main = "main.py",
     deps = [
         ":main_lib",
     ],
@@ -32,6 +41,7 @@ py_test(
     srcs = ["main_test.py"],
     deps = [
         ":main_lib",
+        "@pypi//onnx",
         "@pypi//torch",
     ],
 )

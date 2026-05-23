@@ -1,0 +1,26 @@
+genrule(
+    name = "matrix_mul_bin",
+    srcs = ["matrix_mul.hip"],
+    outs = ["matrix_mul"],
+    cmd = "LD_LIBRARY_PATH=/tmp:$${LD_LIBRARY_PATH:-} hipcc -O3 $(SRCS) -o $(OUTS)",
+    executable = True,
+    local = 1,
+    tags = ["no-sandbox"],
+    visibility = ["//visibility:public"],
+)
+
+genrule(
+    name = "compile_matrix_mul_test_bin",
+    srcs = ["matrix_mul.hip"],
+    outs = ["matrix_mul_test_bin"],
+    cmd = "LD_LIBRARY_PATH=/tmp:$${LD_LIBRARY_PATH:-} hipcc -O3 $(SRCS) -o $(OUTS)",
+    local = 1,
+    tags = ["no-sandbox"],
+)
+
+sh_test(
+    name = "matrix_mul_test",
+    srcs = ["run_test.sh"],
+    data = [":compile_matrix_mul_test_bin"],
+    tags = ["no-sandbox"],
+)

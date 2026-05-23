@@ -63,5 +63,13 @@ crate.spec(
         "MTLLibrary",
     ],
 )
+crate.spec(
+    package = "protobuf",
+    version = "=3.4.0",
+)
+crate.spec(
+    package = "onnx-protobuf",
+    version = "0.2.3",
+)
 crate.from_specs()
 use_repo(crate, "crates")

@@ -1,4 +1,20 @@
-load("@rules_rust//rust:defs.bzl", "rust_binary")
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_test")
+
+rust_binary(
+    name = "lquid",
+    srcs = ["src/main.rs"],
+    edition = "2021",
+    deps = [
+        "//lquid/onnx_reader",
+        "@crates//:onnx-protobuf",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+rust_test(
+    name = "lquid_test",
+    crate = ":lquid",
+)
 
 rust_binary(
     name = "metal",
