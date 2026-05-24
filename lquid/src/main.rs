@@ -1,5 +1,9 @@
 use std::env;
+pub mod triton_ir;
+pub mod onnx_compiler;
 use std::error::Error;
+
+
 use std::path::PathBuf;
 
 // Constants
@@ -10,13 +14,15 @@ USAGE:
     lquid <SUBCOMMAND> [ARGS...]
 
 SUBCOMMANDS:
-    read-onnx <PATH>    Read and print the ONNX graph from the specified file path.
-    help                Print this help message.
+    read-onnx <PATH>                     Read and print the ONNX graph from the specified file path.
+    compile-onnx <ONNX_PATH> <OUT_PATH>  Compile the first Gemm node in the ONNX model to Triton IR (.ttir).
+    help                                 Print this help message.
 ";
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Command {
     ReadOnnx(PathBuf),
+    CompileOnnx { onnx_path: PathBuf, output_path: PathBuf },
     Help,
     Unknown(String),
 }
@@ -35,6 +41,15 @@ where
             match args.next() {
                 Some(path) => Command::ReadOnnx(PathBuf::from(path)),
                 None => Command::Unknown("Missing path for read-onnx subcommand".to_string()),
+            }
+        }
+        Some(ref subcmd) if subcmd == "compile-onnx" => {
+            match (args.next(), args.next()) {
+                (Some(onnx_path), Some(output_path)) => Command::CompileOnnx {
+                    onnx_path: PathBuf::from(onnx_path),
+                    output_path: PathBuf::from(output_path),
+                },
+                _ => Command::Unknown("Missing args for compile-onnx subcommand. Expected: compile-onnx <ONNX_PATH> <OUT_PATH>".to_string()),
             }
         }
         Some(ref subcmd) if subcmd == "help" || subcmd == "-h" || subcmd == "--help" => Command::Help,
@@ -59,6 +74,12 @@ pub fn print_stdout(text: &str) {
     println!("{}", text);
 }
 
+/// Wrapper function for file write IO.
+/// Follows Rule 2: IO wrapper.
+pub fn write_file_io(path: &std::path::Path, content: &str) -> std::io::Result<()> {
+    std::fs::write(path, content)
+}
+
 /// Main pipeline: executes the parsed command.
 /// Coordinates the pure functions and the IO wrappers.
 pub fn execute_command(command: Command) -> Result<(), Box<dyn Error>> {
@@ -78,6 +99,35 @@ pub fn execute_command(command: Command) -> Result<(), Box<dyn Error>> {
             print_stdout(&formatted);
             Ok(())
         }
+        Command::CompileOnnx { onnx_path, output_path } => {
+            let resolved_onnx = if !onnx_path.is_absolute() {
+                if let Ok(workspace_dir) = env::var("BUILD_WORKSPACE_DIRECTORY") {
+                    PathBuf::from(workspace_dir).join(&onnx_path)
+                } else {
+                    onnx_path
+                }
+            } else {
+                onnx_path
+            };
+            let resolved_output = if !output_path.is_absolute() {
+                if let Ok(workspace_dir) = env::var("BUILD_WORKSPACE_DIRECTORY") {
+                    PathBuf::from(workspace_dir).join(&output_path)
+                } else {
+                    output_path
+                }
+            } else {
+                output_path
+            };
+
+            let model = onnx_reader::load_model_from_file(resolved_onnx)?;
+            let params = onnx_compiler::extract_gemm_params(&model)?;
+            let module = onnx_compiler::generate_gemm_module(&params);
+            let formatted_ir = triton_ir::format_module(&module);
+            
+            write_file_io(&resolved_output, &formatted_ir)?;
+            print_stdout(&format!("Successfully compiled ONNX Gemm to Triton IR: {:?}", resolved_output));
+            Ok(())
+        }
         Command::Help => {
             print_stdout(HELP_TEXT);
             Ok(())
@@ -89,6 +139,7 @@ pub fn execute_command(command: Command) -> Result<(), Box<dyn Error>> {
         }
     }
 }
+
 
 fn main() {
     let command = parse_args(env::args());
@@ -124,8 +175,26 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_args_compile_onnx() {
+        let args = vec![
+            "lquid".to_string(),
+            "compile-onnx".to_string(),
+            "model.onnx".to_string(),
+            "output.ttir".to_string(),
+        ];
+        assert_eq!(
+            parse_args(args.into_iter()),
+            Command::CompileOnnx {
+                onnx_path: PathBuf::from("model.onnx"),
+                output_path: PathBuf::from("output.ttir"),
+            }
+        );
+    }
+
+    #[test]
     fn test_format_graph_empty() {
         let model = onnx_reader::ModelProto::new();
         assert_eq!(format_graph(&model), "No graph found in the model");
     }
+
 }

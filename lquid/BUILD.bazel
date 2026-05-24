@@ -1,13 +1,23 @@
 load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_test")
+load("@rules_python//python:defs.bzl", "py_binary")
+
 
 rust_binary(
     name = "lquid",
-    srcs = ["src/main.rs"],
+    srcs = [
+        "src/main.rs",
+        "src/triton_ir.rs",
+        "src/onnx_compiler.rs",
+    ],
+
     edition = "2021",
+
     deps = [
         "//lquid/onnx_reader",
         "@crates//:onnx-protobuf",
+        "@crates//:protobuf",
     ],
+
     visibility = ["//visibility:public"],
 )
 
@@ -40,3 +50,17 @@ rust_binary(
     }),
     visibility = ["//visibility:public"],
 )
+
+py_binary(
+    name = "run_triton_kernel",
+    srcs = ["run_triton_kernel.py"],
+    main = "run_triton_kernel.py",
+    deps = [
+        "//onnx_simple_linear:model_lib",
+        "@pypi//torch",
+    ],
+    env = {
+        "HSA_OVERRIDE_GFX_VERSION": "11.0.0",
+    },
+)
+

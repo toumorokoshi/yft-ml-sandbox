@@ -2,7 +2,7 @@ import os
 import sys
 import argparse
 from typing import Sequence
-from simple_linear_onnx.model import create_model, generate_dummy_input, export_to_onnx_bytes
+from onnx_simple_linear.model import create_model, generate_dummy_input, export_to_onnx_bytes
 
 DEFAULT_OUTPUT_PATH = "model.onnx"
 
