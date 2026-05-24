@@ -56,7 +56,8 @@ def generate_text_pipeline(
         
         # Append next token
         current_tokens.append(next_token)
-        print(f"  Step {i+1}/{gen_length}: Generated token {next_token}")
+        decoded_word = decode_tokens(tokenizer, [next_token])
+        print(f"  Step {i+1}/{gen_length}: Generated token {next_token} -> '{decoded_word}'")
         
     # 7. Decode generated tokens (pure)
     generated_text = decode_tokens(tokenizer, current_tokens)

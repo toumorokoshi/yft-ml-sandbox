@@ -1,5 +1,41 @@
 # lquid
 
+## high level design
+
+1. user writes an op in rust, that takes in the following:
+
+- host profile (number of cores, cache sizes, ...)
+- device profile (L1 / L2 cache sizes, warp size, ...)
+- any parameters specific to that op (e.g. for a gemm A, B, and C shapes)
+
+2. the function outputs IR.
+3. IR has a compilation pipeline for the target device
+   1. this uses the native compiler toolchain:
+      1. nvidia: nvvm IR -> cubin
+      2. amd:k1G
+
+## Milestones
+
+### M0
+
+The first goal is to get to _some_ op that is optimized based on the target
+architecture.
+
+For the first milestone, we will be re-using the triton IR to generate various
+kernels for a target device. The steps here will look like the following:
+
+1. the front end consumes an ONNX model
+2. map an ONNX GEMM to a rust function that will generate optimized triton IR for
+   that particular target profile.
+3. under the hood, use the triton compiler to compile the triton IR to the
+   target architecture.
+4. have an example script that will load the compiled artifact and run inference
+   on the target.
+
+### M1
+
+- optimization on kernels that require host <-> device transfers
+
 ## Terminology
 
 The terminology in this document largely aligns with NVidia's nomenclature for
@@ -59,3 +95,32 @@ compiler could produce an optimized runtime.
 A common GPU paradigm is that kernels are compiled, and then executed directly
 on the device. so part of the compilation pipeline should include the
 compilation of kernels that will run on the GPU.
+
+### Nvidia GPU compilation path
+
+1. author NVVM IR
+2. use nvvc to compile the IR to a .cubin file
+3. the .cubin file must be executed via a program that is using the CUDA driver API.
+
+### Usage of memory models
+
+Even during an execution of a model, we have to be able to possibly leverage
+every possible storage of temporary that we can. This includes
+
+- registers / SRAM
+- L1 / L2 / L3 cached
+- high-bandwidth-memory (HBM)
+- system DRAM
+
+Many kernels will only need ram that resides on the device GPU. In some cases
+there is a need to move between host and device memory (things like the Tensor
+memory accelerator can help with this).
+
+### The optimizer needs to have device-specific parameters
+
+An AOT optimizer will require some understanding of both host and device to
+optimize.
+
+- a hand-written optimization algorithm is probably best.
+- generate_kernel(host_profile, device_profile) -> IR
+- IR --> native_compiler --> assembly
