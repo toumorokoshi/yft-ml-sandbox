@@ -73,3 +73,11 @@ crate.spec(
 )
 crate.from_specs()
 use_repo(crate, "crates")
+
+# HTTP file download for GPT-2 ONNX model
+http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")
+http_file(
+    name = "gpt2_onnx",
+    sha256 = "12fbb1ec2d2d70c8ebd21a290a348a4109447b98582af64c6f93b6526d5c8f35",
+    urls = ["https://github.com/onnx/models/raw/main/validated/text/machine_comprehension/gpt-2/model/gpt2-lm-head-10.onnx"],
+)

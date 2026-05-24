@@ -12,3 +12,6 @@ onnxruntime-rocm==1.22.2post1
 gymnasium==1.0.0
 highway-env==1.10.2
 matplotlib==3.10.0
+iree-base-compiler[onnx]
+iree-base-runtime
+transformers

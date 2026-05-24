@@ -1,5 +1,7 @@
 # Bazel output directories
 bazel-*
+# model cache
+.cache
 
 # User-specific Bazel configuration
 .bazelrc.user
