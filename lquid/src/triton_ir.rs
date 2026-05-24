@@ -24,30 +24,54 @@ impl fmt::Display for TritonType {
     }
 }
 
+/// Represents an instruction in the Triton IR Dialect.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TritonInstruction {
+    /// Defines a constant value (integer, float, or dense tensor constant).
     Constant { dest: String, value: String, ty: TritonType },
+    /// Retrieves the program ID along a specific grid axis ('x', 'y', or 'z').
     GetProgramId { dest: String, axis: char, ty: TritonType },
+    /// Computes the integer addition of two operands.
     AddI { dest: String, lhs: String, rhs: String, ty: TritonType },
+    /// Computes the floating-point addition of two operands.
     AddF { dest: String, lhs: String, rhs: String, ty: TritonType },
+    /// Computes the integer subtraction of two operands.
     SubI { dest: String, lhs: String, rhs: String, ty: TritonType },
+    /// Computes the floating-point subtraction of two operands.
     SubF { dest: String, lhs: String, rhs: String, ty: TritonType },
+    /// Computes the integer multiplication of two operands.
     MulI { dest: String, lhs: String, rhs: String, ty: TritonType },
+    /// Computes the floating-point multiplication of two operands.
     MulF { dest: String, lhs: String, rhs: String, ty: TritonType },
+    /// Computes the signed integer division of two operands.
     DivSI { dest: String, lhs: String, rhs: String, ty: TritonType },
+    /// Computes the floating-point division of two operands.
     DivF { dest: String, lhs: String, rhs: String, ty: TritonType },
+    /// Computes the signed integer remainder of two operands.
     RemSI { dest: String, lhs: String, rhs: String, ty: TritonType },
+    /// Computes the signed integer minimum of two operands.
     MinSI { dest: String, lhs: String, rhs: String, ty: TritonType },
+    /// Performs a logical/bitwise AND of two operands.
     And { dest: String, lhs: String, rhs: String, ty: TritonType },
+    /// Performs an integer comparison based on a predicate (e.g. "slt", "eq").
     Cmpi { dest: String, predicate: String, lhs: String, rhs: String, ty: TritonType },
+    /// Creates a 1D tensor representing a range of integers from start (inclusive) to end (exclusive).
     MakeRange { dest: String, start: i32, end: i32, ty: TritonType },
+    /// Splats a scalar value into a tensor of the specified destination type.
     Splat { dest: String, src: String, src_ty: TritonType, dest_ty: TritonType },
+    /// Expands the dimensions of a tensor by inserting a new unit dimension at the specified axis.
     ExpandDims { dest: String, src: String, axis: i32, src_ty: TritonType, dest_ty: TritonType },
+    /// Broadcasts a tensor to a compatible destination type of a larger shape.
     Broadcast { dest: String, src: String, src_ty: TritonType, dest_ty: TritonType },
+    /// Adds an offset to a pointer or a tensor of pointers.
     AddPtr { dest: String, ptr: String, offset: String, ptr_ty: TritonType, offset_ty: TritonType },
+    /// Loads a value or tensor of values from memory, with an optional mask and other padding.
     Load { dest: String, ptr: String, mask: Option<String>, other: Option<String>, ty: TritonType },
+    /// Stores a value or tensor of values into memory under an optional mask.
     Store { ptr: String, value: String, mask: Option<String>, ty: TritonType },
+    /// Performs a matrix multiplication of a and b, adding it to the accumulator.
     Dot { dest: String, a: String, b: String, accumulator: String, a_ty: TritonType, b_ty: TritonType, dest_ty: TritonType },
+    /// Represents a structured loop (scf.for) with loop variable, bounds, step, and loop-carried variables.
     For {
         loop_var: String,
         start: String,
@@ -59,6 +83,7 @@ pub enum TritonInstruction {
         yield_vals: Vec<String>,
         yield_types: Vec<TritonType>,
     },
+    /// Returns control back from the function.
     Return,
 }
 
