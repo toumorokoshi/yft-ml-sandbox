@@ -13,6 +13,7 @@ from yft_utils.timeit import timeit
 
 # Constants
 DEFAULT_MODEL_PATH = "model.onnx"
+NUM_TRIALS = 10
 
 
 def run_onnx_with_pytorch(
@@ -101,7 +102,15 @@ def main() -> None:
         default=DEFAULT_MODEL_PATH,
         help=f"Path to the ONNX model file (default: {DEFAULT_MODEL_PATH})",
     )
+    parser.add_argument(
+        "--triton_print_autotuning",
+        type=bool,
+        default=False,
+        help=f"If true, print triton autotuning",
+    )
     args = parser.parse_args()
+    if args.triton_print_autotuning:
+        os.environ["TRITON_PRINT_AUTOTUNING"] = "1"
 
     # 1. Choose the device
     device = (
@@ -131,25 +140,26 @@ def main() -> None:
     for name, tensor in inputs.items():
         print(f"Input '{name}': shape={tensor.shape}, dtype={tensor.dtype}")
 
-    # 5. Run the model using Triton-backed ONNX interpreter
-    print("\nExecuting ONNX model using Triton...")
-    try:
-        timed_triton = timeit(run_onnx_with_triton)
-        triton_outputs, triton_time = timed_triton(loaded_model, inputs, device)
-        print(f"Triton execution time: {triton_time:.6f} seconds")
-    except Exception as e:
-        print(f"Error during Triton execution: {e}")
-        sys.exit(1)
+    for i in range(NUM_TRIALS):
+        # 5. Run the model using Triton-backed ONNX interpreter
+        print(f"\nExecuting ONNX model using Triton... ({i} out of {NUM_TRIALS})")
+        try:
+            timed_triton = timeit(run_onnx_with_triton)
+            triton_outputs, triton_time = timed_triton(loaded_model, inputs, device)
+            print(f"Triton execution time: {triton_time:.6f} seconds")
+        except Exception as e:
+            print(f"Error during Triton execution: {e}")
+            sys.exit(1)
 
-    # 6. Verify correctness against PyTorch reference interpreter
-    print("Executing ONNX model using PyTorch reference interpreter...")
-    try:
-        timed_pytorch = timeit(run_onnx_with_pytorch)
-        ref_outputs, pytorch_time = timed_pytorch(loaded_model, inputs, device)
-        print(f"PyTorch reference execution time: {pytorch_time:.6f} seconds")
-    except Exception as e:
-        print(f"Error during reference execution: {e}")
-        sys.exit(1)
+        # 6. Verify correctness against PyTorch reference interpreter
+        print("Executing ONNX model using PyTorch reference interpreter...")
+        try:
+            timed_pytorch = timeit(run_onnx_with_pytorch)
+            ref_outputs, pytorch_time = timed_pytorch(loaded_model, inputs, device)
+            print(f"PyTorch reference execution time: {pytorch_time:.6f} seconds")
+        except Exception as e:
+            print(f"Error during reference execution: {e}")
+            sys.exit(1)
 
     # 7. Compare results
     print("\n--- Outputs Comparison ---")

@@ -43,6 +43,13 @@ def elementwise_add_2d_kernel(
     tl.store(out_ptrs, out, mask=mask)
 
 
+@triton.autotune(
+    configs=[
+        triton.Config({'BLOCK_SIZE': 128}, num_warps=4, num_stages=2),
+        triton.Config({'BLOCK_SIZE': 256}, num_warps=8, num_stages=2)
+    ],
+    key=["BLOCK_SIZE_M"],
+)
 @triton.jit
 def elementwise_mul_2d_kernel(
     x_ptr, y_ptr, out_ptr,
