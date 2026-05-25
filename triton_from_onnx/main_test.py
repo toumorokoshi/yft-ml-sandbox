@@ -12,6 +12,10 @@ from triton_from_onnx.interpreter import (
     run_onnx_with_triton,
     load_onnx_model_from_file,
 )
+from triton_from_onnx.main import (
+    profile_function,
+    save_profile_trace,
+)
 def create_gemm_onnx_model() -> onnx.ModelProto:
     """Helper: Constructs an ONNX ModelProto containing a Gemm node in-memory for testing."""
     a_val_info = helper.make_tensor_value_info("A", TensorProto.FLOAT, [4, 8])
@@ -169,6 +173,36 @@ class TestTritonFromOnnx(unittest.TestCase):
             
             self.assertTrue(torch.allclose(result, expected, atol=1e-4, rtol=1e-4))
 
+    def test_profile_function_data_structures(self):
+        """Unit test: Test profile_function directly on data structures without filesystem IO."""
+        # Simple pure function
+        def dummy_op(x, y):
+            return x * y + y
+            
+        x = torch.randn(4, 4, device=self.device)
+        y = torch.randn(4, 4, device=self.device)
+        
+        result, prof = profile_function(dummy_op, x, y)
+        
+        self.assertTrue(torch.allclose(result, x * y + y))
+        self.assertIsInstance(prof, torch.profiler.profile)
+
+    def test_integration_profile_io(self):
+        """Integration test: Test saving a profile trace to disk using save_profile_trace wrapper."""
+        def dummy_op(x):
+            return x + 1
+            
+        x = torch.randn(2, 2, device=self.device)
+        _, prof = profile_function(dummy_op, x)
+        
+        with tempfile.TemporaryDirectory() as tmpdir:
+            profile_path = os.path.join(tmpdir, "test_profile.json")
+            save_profile_trace(prof, profile_path)
+            
+            self.assertTrue(os.path.exists(profile_path))
+            self.assertTrue(os.path.getsize(profile_path) > 0)
+
 
 if __name__ == "__main__":
     unittest.main()
+

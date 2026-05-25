@@ -49,3 +49,21 @@ py_binary(
     },
 )
 
+py_binary(
+    name = "inspect_ops",
+    srcs = ["inspect_ops.py"],
+    deps = [
+        "@pypi//onnx",
+    ],
+)
+
+py_binary(
+    name = "generate_gemm",
+    srcs = ["generate_gemm.py"],
+    deps = [
+        "@pypi//onnx",
+    ],
+)
+
+
+

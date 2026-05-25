@@ -11,6 +11,31 @@ from yft_utils.timeit import timeit
 # Constants
 DEFAULT_MODEL_PATH = "model.onnx"
 NUM_TRIALS = 10
+PROFILE_DIR = "/tmp"
+
+
+def save_profile_trace(prof: torch.profiler.profile, path: str) -> None:
+    """IO Wrapper: Saves the profiler trace to a file path."""
+    prof.export_chrome_trace(path)
+
+
+def profile_function(
+    func,
+    *args,
+    **kwargs,
+):
+    """Inner function: Runs the function under torch.profiler and returns result and profiler."""
+    with torch.profiler.profile(
+        activities=[
+            torch.profiler.ProfilerActivity.CPU,
+            torch.profiler.ProfilerActivity.CUDA,
+        ],
+        record_shapes=True,
+        with_stack=True,
+    ) as prof:
+        result = func(*args, **kwargs)
+    return result, prof
+
 
 
 def run_onnx_with_pytorch(
@@ -148,13 +173,26 @@ def main() -> None:
     for name, tensor in inputs.items():
         print(f"Input '{name}': shape={tensor.shape}, dtype={tensor.dtype}")
 
+    model_name = os.path.splitext(os.path.basename(args.model_path))[0]
+    triton_profile_path = os.path.join(PROFILE_DIR, f"triton_{model_name}.json")
+    pytorch_profile_path = os.path.join(PROFILE_DIR, f"pytorch_{model_name}.json")
+
     for i in range(NUM_TRIALS):
+        is_last_trial = (i == NUM_TRIALS - 1)
+
         # 5. Run the model using Triton-backed ONNX interpreter
         print(f"\nExecuting ONNX model using Triton... ({i} out of {NUM_TRIALS})")
         try:
-            timed_triton = timeit(run_onnx_with_triton)
-            triton_outputs, triton_time = timed_triton(loaded_model, inputs, device)
-            print(f"Triton execution time: {triton_time:.6f} seconds")
+            if is_last_trial:
+                print(f"Profiling Triton execution (saving trace to {triton_profile_path})...")
+                triton_outputs, prof = profile_function(
+                    run_onnx_with_triton, loaded_model, inputs, device
+                )
+                save_profile_trace(prof, triton_profile_path)
+            else:
+                timed_triton = timeit(run_onnx_with_triton)
+                triton_outputs, triton_time = timed_triton(loaded_model, inputs, device)
+                print(f"Triton execution time: {triton_time:.6f} seconds")
         except Exception as e:
             print(f"Error during Triton execution: {e}")
             sys.exit(1)
@@ -162,12 +200,20 @@ def main() -> None:
         # 6. Verify correctness against PyTorch reference interpreter
         print("Executing ONNX model using PyTorch reference interpreter...")
         try:
-            timed_pytorch = timeit(run_onnx_with_pytorch)
-            ref_outputs, pytorch_time = timed_pytorch(loaded_model, inputs, device)
-            print(f"PyTorch reference execution time: {pytorch_time:.6f} seconds")
+            if is_last_trial:
+                print(f"Profiling PyTorch reference execution (saving trace to {pytorch_profile_path})...")
+                ref_outputs, prof = profile_function(
+                    run_onnx_with_pytorch, loaded_model, inputs, device
+                )
+                save_profile_trace(prof, pytorch_profile_path)
+            else:
+                timed_pytorch = timeit(run_onnx_with_pytorch)
+                ref_outputs, pytorch_time = timed_pytorch(loaded_model, inputs, device)
+                print(f"PyTorch reference execution time: {pytorch_time:.6f} seconds")
         except Exception as e:
             print(f"Error during reference execution: {e}")
             sys.exit(1)
+
 
     # 7. Compare results
     print("\n--- Outputs Comparison ---")
