@@ -3,8 +3,8 @@ import torch
 import torch.nn as nn
 
 # Constants
-INPUT_DIM = 10
-OUTPUT_DIM = 5
+INPUT_DIM = 2**12
+OUTPUT_DIM = 2**12
 
 class SimpleLinearModel(nn.Module):
     """A simple linear model for ONNX export."""

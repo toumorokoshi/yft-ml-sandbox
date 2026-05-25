@@ -31,7 +31,7 @@ def run_onnx_with_pytorch(
 
     for node in model.graph.node:
         node_inputs = [env[name] for name in node.input]
-        
+
         if node.op_type == "Add":
             env[node.output[0]] = node_inputs[0] + node_inputs[1]
         elif node.op_type == "Mul":
@@ -42,7 +42,7 @@ def run_onnx_with_pytorch(
             beta = attrs["beta"].f if "beta" in attrs else 1.0
             transA = attrs["transA"].i if "transA" in attrs else 0
             transB = attrs["transB"].i if "transB" in attrs else 0
-            
+
             A, B = node_inputs[0], node_inputs[1]
             if transA == 1:
                 A = A.t()
@@ -71,11 +71,11 @@ def generate_inputs_from_graph(
     """Inner function: Automatically generates inputs on the device from model metadata."""
     initializer_names = {init.name for init in model.graph.initializer}
     inputs = {}
-    
+
     for inp in model.graph.input:
         if inp.name in initializer_names:
             continue
-            
+
         shape = []
         for dim in inp.type.tensor_type.shape.dim:
             if dim.HasField("dim_value"):
@@ -83,10 +83,10 @@ def generate_inputs_from_graph(
             else:
                 # Default dynamic dimensions to 1
                 shape.append(1)
-                
+
         # Generate random inputs for the model (assuming float32)
         inputs[inp.name] = torch.randn(shape, dtype=torch.float32, device=device)
-        
+
     return inputs
 
 
