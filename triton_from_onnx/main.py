@@ -5,11 +5,8 @@ import onnx
 from onnx import numpy_helper
 import torch
 
-from triton_from_onnx.interpreter import (
-    run_onnx_with_triton,
-    load_onnx_model_from_file,
-)
 from yft_utils.timeit import timeit
+
 
 # Constants
 DEFAULT_MODEL_PATH = "model.onnx"
@@ -91,6 +88,11 @@ def generate_inputs_from_graph(
     return inputs
 
 
+def str_to_bool(val: str) -> bool:
+    """Helper: Converts string to boolean value."""
+    return val.lower() in ("true", "1", "yes", "t", "y")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Run arbitrary ONNX model using Triton on GPU."
@@ -104,13 +106,19 @@ def main() -> None:
     )
     parser.add_argument(
         "--triton_print_autotuning",
-        type=bool,
+        type=str_to_bool,
         default=False,
         help=f"If true, print triton autotuning",
     )
     args = parser.parse_args()
     if args.triton_print_autotuning:
         os.environ["TRITON_PRINT_AUTOTUNING"] = "1"
+
+    # Delay import of interpreter until environment variable is set
+    from triton_from_onnx.interpreter import (
+        run_onnx_with_triton,
+        load_onnx_model_from_file,
+    )
 
     # 1. Choose the device
     device = (

@@ -36,3 +36,16 @@ py_test(
         "HSA_OVERRIDE_GFX_VERSION": "11.0.0",
     },
 )
+
+py_binary(
+    name = "experiment",
+    srcs = ["experiment.py"],
+    deps = [
+        ":interpreter_lib",
+        "//gpu_device_info",
+    ],
+    env = {
+        "HSA_OVERRIDE_GFX_VERSION": "11.0.0",
+    },
+)
+

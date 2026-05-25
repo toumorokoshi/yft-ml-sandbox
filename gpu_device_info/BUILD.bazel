@@ -1,0 +1,20 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "gpu_device_info",
+    srcs = [
+        "__init__.py",
+        "amd.py",
+        "interface.py",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "amd_test",
+    srcs = ["amd_test.py"],
+    tags = ["local"],
+    deps = [
+        ":gpu_device_info",
+    ],
+)

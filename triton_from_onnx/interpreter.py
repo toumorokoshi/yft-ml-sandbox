@@ -14,6 +14,14 @@ BLOCK_SIZE_M_ELEM = 16
 BLOCK_SIZE_N_ELEM = 16
 
 
+@triton.autotune(
+    configs=[
+        triton.Config({'BLOCK_SIZE_M': 16, 'BLOCK_SIZE_N': 16}, num_warps=4),
+        triton.Config({'BLOCK_SIZE_M': 32, 'BLOCK_SIZE_N': 32}, num_warps=4),
+        triton.Config({'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 64}, num_warps=4),
+    ],
+    key=['M', 'N'],
+)
 @triton.jit
 def elementwise_add_2d_kernel(
     x_ptr, y_ptr, out_ptr,
@@ -45,10 +53,11 @@ def elementwise_add_2d_kernel(
 
 @triton.autotune(
     configs=[
-        triton.Config({'BLOCK_SIZE': 128}, num_warps=4, num_stages=2),
-        triton.Config({'BLOCK_SIZE': 256}, num_warps=8, num_stages=2)
+        triton.Config({'BLOCK_SIZE_M': 16, 'BLOCK_SIZE_N': 16}, num_warps=4),
+        triton.Config({'BLOCK_SIZE_M': 32, 'BLOCK_SIZE_N': 32}, num_warps=4),
+        triton.Config({'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 64}, num_warps=4),
     ],
-    key=["BLOCK_SIZE_M"],
+    key=['M', 'N'],
 )
 @triton.jit
 def elementwise_mul_2d_kernel(
@@ -79,6 +88,20 @@ def elementwise_mul_2d_kernel(
     tl.store(out_ptrs, out, mask=mask)
 
 
+@triton.autotune(
+    configs=[
+        # Optimized configurations for RDNA 3/3.5 (warp size 32)
+        triton.Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 128, 'BLOCK_SIZE_K': 32, 'GROUP_SIZE_M': 8}, num_stages=3, num_warps=8),
+        triton.Config({'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 128, 'BLOCK_SIZE_K': 32, 'GROUP_SIZE_M': 8}, num_stages=4, num_warps=8),
+        triton.Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 64, 'BLOCK_SIZE_K': 32, 'GROUP_SIZE_M': 8}, num_stages=4, num_warps=8),
+        triton.Config({'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 64, 'BLOCK_SIZE_K': 32, 'GROUP_SIZE_M': 8}, num_stages=5, num_warps=4),
+        triton.Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 128, 'BLOCK_SIZE_K': 64, 'GROUP_SIZE_M': 8}, num_stages=3, num_warps=32),
+        triton.Config({'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 128, 'BLOCK_SIZE_K': 64, 'GROUP_SIZE_M': 8}, num_stages=4, num_warps=16),
+        triton.Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 64, 'BLOCK_SIZE_K': 64, 'GROUP_SIZE_M': 8}, num_stages=4, num_warps=16),
+        triton.Config({'BLOCK_SIZE_M': 64, 'BLOCK_SIZE_N': 64, 'BLOCK_SIZE_K': 64, 'GROUP_SIZE_M': 8}, num_stages=5, num_warps=8),
+    ],
+    key=['M', 'N', 'K'],
+)
 @triton.jit
 def gemm_kernel(
     a_ptr, b_ptr, c_ptr,
@@ -142,8 +165,6 @@ def triton_add(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         x_b.stride(0), x_b.stride(1),
         y_b.stride(0), y_b.stride(1),
         out.stride(0), out.stride(1),
-        BLOCK_SIZE_M=BLOCK_SIZE_M_ELEM,
-        BLOCK_SIZE_N=BLOCK_SIZE_N_ELEM,
     )
 
     if x.dim() < 2 and y.dim() < 2:
@@ -172,8 +193,6 @@ def triton_mul(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
         x_b.stride(0), x_b.stride(1),
         y_b.stride(0), y_b.stride(1),
         out.stride(0), out.stride(1),
-        BLOCK_SIZE_M=BLOCK_SIZE_M_ELEM,
-        BLOCK_SIZE_N=BLOCK_SIZE_N_ELEM,
     )
 
     if x.dim() < 2 and y.dim() < 2:
@@ -201,12 +220,9 @@ def triton_matmul(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
         a.stride(0), a.stride(1),
         b.stride(0), b.stride(1),
         c.stride(0), c.stride(1),
-        BLOCK_SIZE_M=BLOCK_SIZE_M_GEMM,
-        BLOCK_SIZE_N=BLOCK_SIZE_N_GEMM,
-        BLOCK_SIZE_K=BLOCK_SIZE_K_GEMM,
-        GROUP_SIZE_M=GROUP_SIZE_M_GEMM,
     )
     return c
+
 
 
 def load_onnx_model_from_file(file_path: str) -> onnx.ModelProto:
