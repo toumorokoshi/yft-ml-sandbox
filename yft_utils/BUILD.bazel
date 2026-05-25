@@ -1,0 +1,18 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "yft_utils",
+    srcs = [
+        "__init__.py",
+        "timeit.py",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "timeit_test",
+    srcs = ["timeit_test.py"],
+    deps = [
+        ":yft_utils",
+    ],
+)

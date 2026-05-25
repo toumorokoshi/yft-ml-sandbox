@@ -1,0 +1,38 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "interpreter_lib",
+    srcs = ["interpreter.py"],
+    deps = [
+        "@pypi//onnx",
+        "@pypi//torch",
+        "@pypi//pytorch_triton_rocm",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+py_binary(
+    name = "main",
+    srcs = ["main.py"],
+    deps = [
+        ":interpreter_lib",
+        "//yft_utils",
+    ],
+    env = {
+        "HSA_OVERRIDE_GFX_VERSION": "11.0.0",
+    },
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "main_test",
+    srcs = ["main_test.py"],
+    deps = [
+        ":interpreter_lib",
+        ":main",
+        "@pypi//torch",
+    ],
+    env = {
+        "HSA_OVERRIDE_GFX_VERSION": "11.0.0",
+    },
+)
