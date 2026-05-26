@@ -20,6 +20,31 @@ pub const QWEN_MODEL_URL: &str =
 pub const QWEN_TOKENIZER_PATH: &str = "models/qwen3_0.6b/tokenizer.json";
 pub const QWEN_MODEL_PATH: &str = "models/qwen3_0.6b/model_q4.onnx";
 
+/// Resolves a relative path to an absolute path dynamically based on environment.
+pub fn get_path(rel_path: &str) -> std::path::PathBuf {
+    if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
+        Path::new(&manifest_dir).join(rel_path)
+    } else if let Ok(workspace_dir) = std::env::var("BUILD_WORKSPACE_DIRECTORY") {
+        Path::new(&workspace_dir).join("assistant_at_home").join(rel_path)
+    } else {
+        Path::new(rel_path).to_path_buf()
+    }
+}
+
+/// Resolves a user-provided CLI path relative to the invoking shell working directory under Bazel.
+pub fn resolve_user_path(user_path: &str) -> std::path::PathBuf {
+    let path = Path::new(user_path);
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else if let Ok(working_dir) = std::env::var("BUILD_WORKING_DIRECTORY") {
+        Path::new(&working_dir).join(user_path)
+    } else {
+        path.to_path_buf()
+    }
+}
+
+
+
 /// Downloads a single file from a URL to a local destination path.
 pub fn download_file(url: &str, dest_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     println!("Downloading {} -> {:?}", url, dest_path);
@@ -50,14 +75,14 @@ pub fn download_file(url: &str, dest_path: &Path) -> Result<(), Box<dyn std::err
 pub fn download_models_pipeline() -> Result<(), Box<dyn std::error::Error>> {
     // 1. Download Speech-to-Text assets
     println!("--- Downloading Speech-to-Text (Moonshine) assets ---");
-    download_file(TOKENIZER_URL, Path::new(TOKENIZER_PATH))?;
-    download_file(ENCODER_URL, Path::new(ENCODER_PATH))?;
-    download_file(DECODER_URL, Path::new(DECODER_PATH))?;
+    download_file(TOKENIZER_URL, &get_path(TOKENIZER_PATH))?;
+    download_file(ENCODER_URL, &get_path(ENCODER_PATH))?;
+    download_file(DECODER_URL, &get_path(DECODER_PATH))?;
 
     // 2. Download LLM (Qwen3) assets
     println!("\n--- Downloading LLM (Qwen3-0.6B-ONNX) assets ---");
-    download_file(QWEN_TOKENIZER_URL, Path::new(QWEN_TOKENIZER_PATH))?;
-    download_file(QWEN_MODEL_URL, Path::new(QWEN_MODEL_PATH))?;
+    download_file(QWEN_TOKENIZER_URL, &get_path(QWEN_TOKENIZER_PATH))?;
+    download_file(QWEN_MODEL_URL, &get_path(QWEN_MODEL_PATH))?;
 
     println!("\nAll models downloaded successfully!");
     Ok(())

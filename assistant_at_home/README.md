@@ -30,33 +30,41 @@ The STT module is built in Rust using the `ort` crate (ONNX Runtime bindings) an
 
 ### Prerequisites
 
-Make sure you have Rust/Cargo installed, and that your system is configured to link against the ONNX Runtime library (the `ort` crate automatically downloads/links this during build).
+Make sure you have Bazel installed on your system.
 
 ### Setup and Model Download
 
-To download the required Moonshine model assets (tokenizer and ONNX encoder/decoder files) directly from Hugging Face:
+To download all required model assets (tokenizer and ONNX files for both Moonshine STT and Qwen3 LLM) directly from Hugging Face:
 
 ```bash
-cargo run -- download
+bazel run //assistant_at_home:assistant_at_home -- download
 ```
 
-This places the model files in `models/tokenizer.json` and `models/tiny/`.
+This places the model files in `assistant_at_home/models/`.
 
 ### Run Transcription
 
 To transcribe a 16kHz mono WAV file to text:
 
 ```bash
-cargo run --release -- transcribe <PATH_TO_WAV>
+bazel run -c opt //assistant_at_home:assistant_at_home -- transcribe <PATH_TO_WAV>
+```
+
+### Run End-to-End Voice Assistant Pipeline
+
+To run the full end-to-end voice assistant flow (which transcribes a WAV file and feeds the output directly to the Qwen3 LLM):
+
+```bash
+bazel run -c opt //assistant_at_home:assistant_at_home -- pipeline <PATH_TO_WAV>
 ```
 
 For example, to test using the sample Beckett audio:
 ```bash
 # Download sample wav
-curl -L -o beckett.wav https://raw.githubusercontent.com/moonshine-ai/moonshine-tflite/main/assets/beckett.wav
+curl -L -o assistant_at_home/beckett.wav https://raw.githubusercontent.com/moonshine-ai/moonshine-tflite/main/assets/beckett.wav
 
-# Transcribe
-cargo run --release -- transcribe beckett.wav
+# Run pipeline
+bazel run -c opt //assistant_at_home:assistant_at_home -- pipeline assistant_at_home/beckett.wav
 ```
 
 ### Running Tests
@@ -65,10 +73,10 @@ We strictly separate our codebase into pure logic functions operating on data st
 
 * **Run Pure Unit Tests** (no I/O or network requests):
   ```bash
-  cargo test
+  bazel test //assistant_at_home:assistant_at_home_test
   ```
 
-* **Run Integration Test** (requires downloaded models and test WAV):
+* **Run Integration Tests** (requires downloaded models and test WAV):
   ```bash
-  cargo test -- --ignored
+  bazel test //assistant_at_home:assistant_at_home_test --test_arg=--ignored --test_output=all
   ```

@@ -1,0 +1,33 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_test")
+
+rust_binary(
+    name = "assistant_at_home",
+    srcs = [
+        "src/main.rs",
+        "src/download.rs",
+        "src/transcribe.rs",
+        "src/llm.rs",
+    ],
+    edition = "2024",
+    deps = [
+        "@crates//:ort",
+        "@crates//:ndarray",
+        "@crates//:tokenizers",
+        "@crates//:hound",
+        "@crates//:ureq",
+    ],
+    data = glob([
+        "models/**",
+    ]),
+    visibility = ["//visibility:public"],
+)
+
+rust_test(
+    name = "assistant_at_home_test",
+    crate = ":assistant_at_home",
+    data = [
+        "beckett.wav",
+    ] + glob([
+        "models/**",
+    ]),
+)

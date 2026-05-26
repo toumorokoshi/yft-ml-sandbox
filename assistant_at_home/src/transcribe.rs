@@ -233,24 +233,27 @@ pub fn transcribe_speech(
 }
 
 pub fn get_transcription(audio_path: &str) -> Result<String, Box<dyn std::error::Error>> {
+    use crate::download::get_path;
+
     // Check if required files exist
-    let tok_p = Path::new(TOKENIZER_PATH);
-    let enc_p = Path::new(ENCODER_PATH);
-    let dec_p = Path::new(DECODER_PATH);
+    let tok_p = get_path(TOKENIZER_PATH);
+    let enc_p = get_path(ENCODER_PATH);
+    let dec_p = get_path(DECODER_PATH);
 
     if !tok_p.exists() || !enc_p.exists() || !dec_p.exists() {
         return Err("Model files not found. Please run the `download` command first.".into());
     }
 
     println!("Initializing ONNX Runtime sessions...");
-    let mut encoder_session = Session::builder()?.commit_from_file(enc_p)?;
-    let mut decoder_session = Session::builder()?.commit_from_file(dec_p)?;
+    let mut encoder_session = Session::builder()?.commit_from_file(&enc_p)?;
+    let mut decoder_session = Session::builder()?.commit_from_file(&dec_p)?;
 
     println!("Loading tokenizer...");
-    let tokenizer = Tokenizer::from_file(tok_p).map_err(|e| e.to_string())?;
+    let tokenizer = Tokenizer::from_file(&tok_p).map_err(|e| e.to_string())?;
 
     println!("Loading WAV audio file: {} ...", audio_path);
-    let audio_data = load_wav_file(audio_path)?;
+    let audio_p = crate::download::resolve_user_path(audio_path);
+    let audio_data = load_wav_file(&audio_p)?;
 
     println!("Transcribing speech...");
     let tokens = transcribe_speech(
@@ -381,28 +384,28 @@ mod tests {
     #[test]
     #[ignore]
     fn test_integration_transcribe() {
-        use crate::download::download_models_pipeline;
-        let tok_p = Path::new(TOKENIZER_PATH);
+        use crate::download::{download_models_pipeline, get_path};
+        let tok_p = get_path(TOKENIZER_PATH);
         if !tok_p.exists() {
             download_models_pipeline().unwrap();
         }
 
-        let wav_path = "beckett.wav";
+        let wav_path = get_path("beckett.wav");
         assert!(
-            Path::new(wav_path).exists(),
+            wav_path.exists(),
             "Make sure beckett.wav is downloaded"
         );
 
         let mut encoder_session = Session::builder()
             .unwrap()
-            .commit_from_file(ENCODER_PATH)
+            .commit_from_file(get_path(ENCODER_PATH))
             .unwrap();
         let mut decoder_session = Session::builder()
             .unwrap()
-            .commit_from_file(DECODER_PATH)
+            .commit_from_file(get_path(DECODER_PATH))
             .unwrap();
-        let tokenizer = Tokenizer::from_file(TOKENIZER_PATH).unwrap();
-        let audio_data = load_wav_file(wav_path).unwrap();
+        let tokenizer = Tokenizer::from_file(&tok_p).unwrap();
+        let audio_data = load_wav_file(&wav_path).unwrap();
 
         let tokens = transcribe_speech(
             audio_data,

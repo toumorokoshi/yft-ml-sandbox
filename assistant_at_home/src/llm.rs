@@ -3,7 +3,6 @@ use ndarray::{Array2, Array4, ArrayView1, ArrayViewD, Axis, Ix1, Ix4};
 use ort::session::{Session, SessionInputValue};
 use ort::value::Tensor;
 use std::collections::HashMap;
-use std::path::Path;
 use tokenizers::Tokenizer;
 
 pub struct LlmPipeline {
@@ -160,8 +159,9 @@ pub fn generate_tokens(
 
 impl LlmPipeline {
     pub fn load() -> Result<Self, Box<dyn std::error::Error>> {
-        let tok_path = Path::new(QWEN_TOKENIZER_PATH);
-        let model_path = Path::new(QWEN_MODEL_PATH);
+        use crate::download::get_path;
+        let tok_path = get_path(QWEN_TOKENIZER_PATH);
+        let model_path = get_path(QWEN_MODEL_PATH);
 
         if !tok_path.exists() || !model_path.exists() {
             return Err(
@@ -170,10 +170,10 @@ impl LlmPipeline {
         }
 
         println!("Initializing LLM ONNX Runtime session...");
-        let session = Session::builder()?.commit_from_file(model_path)?;
+        let session = Session::builder()?.commit_from_file(&model_path)?;
 
         println!("Loading LLM tokenizer...");
-        let tokenizer = Tokenizer::from_file(tok_path).map_err(|e| e.to_string())?;
+        let tokenizer = Tokenizer::from_file(&tok_path).map_err(|e| e.to_string())?;
 
         let num_layers = get_num_layers(&session);
         println!("Detected {} layers in LLM model.", num_layers);
