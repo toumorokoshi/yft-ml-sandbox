@@ -1,4 +1,5 @@
 mod download;
+mod llm;
 mod transcribe;
 
 use download::download_models_pipeline;
@@ -11,8 +12,30 @@ fn print_help() {
            assistant_at_home <COMMAND> [ARGS]\n\n\
          Commands:\n  \
            download          Download the tiny model and tokenizer ONNX assets from Hugging Face\n  \
-           transcribe <WAV>  Transcribe a 16kHz mono WAV file to text\n"
+           transcribe <WAV>  Transcribe a 16kHz mono WAV file to text\n  \
+           pipeline <WAV>    Transcribe a 16kHz mono WAV file and pass the text to Qwen3 LLM\n"
     );
+}
+
+fn run_pipeline(audio_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    println!("--- Step 1: Transcribing Audio ---");
+    let transcription = transcribe::get_transcription(audio_path)?;
+    println!("Transcribed text: \"{}\"\n", transcription);
+
+    println!("--- Step 2: Running LLM (Qwen3) ---");
+    let mut llm_pipeline = llm::LlmPipeline::load()?;
+
+    // Format the transcribed text using ChatML template for Qwen3
+    let chat_prompt = format!(
+        "<|im_start|>system\nYou are a helpful voice assistant.<|im_end|>\n<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n",
+        transcription.trim()
+    );
+
+    println!("Generating LLM response...");
+    let response = llm_pipeline.generate(&chat_prompt, 128)?;
+
+    println!("\nLLM Response:\n----------------------\n{}\n", response);
+    Ok(())
 }
 
 fn main() {
@@ -33,6 +56,14 @@ fn main() {
                 return;
             }
             run_transcription(&args[2])
+        }
+        "pipeline" => {
+            if args.len() < 3 {
+                println!("Error: pipeline requires a path to a WAV audio file.\n");
+                print_help();
+                return;
+            }
+            run_pipeline(&args[2])
         }
         _ => {
             println!("Error: Unknown command '{}'\n", command);

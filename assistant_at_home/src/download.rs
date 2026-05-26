@@ -11,6 +11,15 @@ pub const TOKENIZER_PATH: &str = "models/tokenizer.json";
 pub const ENCODER_PATH: &str = "models/tiny/encoder_model.onnx";
 pub const DECODER_PATH: &str = "models/tiny/decoder_model_merged.onnx";
 
+// Qwen3 Model constants
+pub const QWEN_TOKENIZER_URL: &str =
+    "https://huggingface.co/onnx-community/Qwen3-0.6B-ONNX/resolve/main/tokenizer.json";
+pub const QWEN_MODEL_URL: &str =
+    "https://huggingface.co/onnx-community/Qwen3-0.6B-ONNX/resolve/main/onnx/model_q4.onnx";
+
+pub const QWEN_TOKENIZER_PATH: &str = "models/qwen3_0.6b/tokenizer.json";
+pub const QWEN_MODEL_PATH: &str = "models/qwen3_0.6b/model_q4.onnx";
+
 /// Downloads a single file from a URL to a local destination path.
 pub fn download_file(url: &str, dest_path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     println!("Downloading {} -> {:?}", url, dest_path);
@@ -37,16 +46,18 @@ pub fn download_file(url: &str, dest_path: &Path) -> Result<(), Box<dyn std::err
     Ok(())
 }
 
-/// Helper wrapper function to download all required Moonshine ONNX model assets.
+/// Helper wrapper function to download all required Moonshine and Qwen3 ONNX model assets.
 pub fn download_models_pipeline() -> Result<(), Box<dyn std::error::Error>> {
-    // 1. Download tokenizer
+    // 1. Download Speech-to-Text assets
+    println!("--- Downloading Speech-to-Text (Moonshine) assets ---");
     download_file(TOKENIZER_URL, Path::new(TOKENIZER_PATH))?;
-
-    // 2. Download encoder
     download_file(ENCODER_URL, Path::new(ENCODER_PATH))?;
-
-    // 3. Download decoder
     download_file(DECODER_URL, Path::new(DECODER_PATH))?;
+
+    // 2. Download LLM (Qwen3) assets
+    println!("\n--- Downloading LLM (Qwen3-0.6B-ONNX) assets ---");
+    download_file(QWEN_TOKENIZER_URL, Path::new(QWEN_TOKENIZER_PATH))?;
+    download_file(QWEN_MODEL_URL, Path::new(QWEN_MODEL_PATH))?;
 
     println!("\nAll models downloaded successfully!");
     Ok(())

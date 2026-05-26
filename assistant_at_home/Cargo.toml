@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 ort = { version = "2.0.0-rc.12", features = ["ndarray"] }
 ndarray = "0.17.2"
-tokenizers = "0.19.1"
+tokenizers = "0.20.0"
 hound = "3.5.1"
 ureq = "2.9.6"
 

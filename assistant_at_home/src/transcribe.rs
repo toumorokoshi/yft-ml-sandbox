@@ -232,7 +232,7 @@ pub fn transcribe_speech(
     Ok(tokens)
 }
 
-pub fn run_transcription(audio_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn get_transcription(audio_path: &str) -> Result<String, Box<dyn std::error::Error>> {
     // Check if required files exist
     let tok_p = Path::new(TOKENIZER_PATH);
     let enc_p = Path::new(ENCODER_PATH);
@@ -260,12 +260,15 @@ pub fn run_transcription(audio_path: &str) -> Result<(), Box<dyn std::error::Err
         &TINY_PARAMS,
     )?;
 
-    let transcription = decode_tokens_to_string(&tokens, &tokenizer)?;
+    decode_tokens_to_string(&tokens, &tokenizer)
+}
+
+pub fn run_transcription(audio_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let transcription = get_transcription(audio_path)?;
     println!(
         "\nTranscription Results:\n----------------------\n{}\n",
         transcription
     );
-
     Ok(())
 }
 
