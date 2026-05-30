@@ -4,6 +4,7 @@ mod llm;
 mod transcribe;
 mod tts;
 
+use clap::{Parser, Subcommand};
 use download::download_models_pipeline;
 use transcribe::run_transcription;
 
@@ -26,48 +27,38 @@ impl Default for ProfileConfig {
     }
 }
 
-pub fn parse_profile_args(args: &[String]) -> (ProfileConfig, Vec<String>) {
-    let mut enabled = false;
-    let mut dir = String::from(DEFAULT_PROFILE_DIR);
-    let mut clean_args = Vec::new();
+#[derive(Parser, Debug)]
+#[command(name = "assistant_at_home", version = "0.1.0", about = "Local speech-to-text voice assistant interface", long_about = None)]
+pub struct Cli {
+    #[arg(long, global = true, help = "Turn on ONNX session profiling when running each model")]
+    pub profile: bool,
 
-    let mut i = 0;
-    while i < args.len() {
-        if args[i] == "--profile" {
-            enabled = true;
-            i += 1;
-        } else if args[i] == "--profile-dir" {
-            enabled = true;
-            if i + 1 < args.len() {
-                dir = args[i + 1].clone();
-                i += 2;
-            } else {
-                i += 1;
-            }
-        } else if args[i].starts_with("--profile-dir=") {
-            enabled = true;
-            dir = args[i]["--profile-dir=".len()..].to_string();
-            i += 1;
-        } else {
-            clean_args.push(args[i].clone());
-            i += 1;
-        }
-    }
+    #[arg(long, global = true, help = "The directory where ONNX session profiling files are written")]
+    pub profile_dir: Option<String>,
 
-    (ProfileConfig { enabled, dir }, clean_args)
+    #[command(subcommand)]
+    pub command: Commands,
 }
 
-fn print_help() {
-    println!(
-        "assistant_at_home - Local speech-to-text voice assistant interface\n\n\
-         Usage:\n  \
-           assistant_at_home <COMMAND> [ARGS]\n\n\
-         Commands:\n  \
-           download          Download the tiny model and tokenizer ONNX assets from Hugging Face\n  \
-           transcribe <WAV>  Transcribe a 16kHz mono WAV file to text\n  \
-           pipeline <WAV>    Transcribe a 16kHz mono WAV file and pass the text to Qwen3 LLM\n  \
-           live              Run the live voice assistant loop from the microphone\n"
-    );
+#[derive(Subcommand, Debug, Clone, PartialEq, Eq)]
+pub enum Commands {
+    #[command(about = "Download the tiny model and tokenizer ONNX assets from Hugging Face")]
+    Download,
+
+    #[command(about = "Transcribe a 16kHz mono WAV file to text")]
+    Transcribe {
+        #[arg(help = "Path to the 16kHz mono WAV file")]
+        wav_path: String,
+    },
+
+    #[command(about = "Transcribe a 16kHz mono WAV file and pass the text to Qwen3 LLM")]
+    Pipeline {
+        #[arg(help = "Path to the 16kHz mono WAV file")]
+        wav_path: String,
+    },
+
+    #[command(about = "Run the live voice assistant loop from the microphone")]
+    Live,
 }
 
 fn run_pipeline(audio_path: &str, profile_config: &ProfileConfig) -> Result<(), Box<dyn std::error::Error>> {
@@ -192,13 +183,12 @@ fn run_live_assistant(profile_config: &ProfileConfig) -> Result<(), Box<dyn std:
 }
 
 fn main() {
-    let args: Vec<String> = std::env::args().collect();
-    let (profile_config, clean_args) = parse_profile_args(&args);
+    let cli = Cli::parse();
 
-    if clean_args.len() < 2 {
-        print_help();
-        return;
-    }
+    let profile_config = ProfileConfig {
+        enabled: cli.profile || cli.profile_dir.is_some(),
+        dir: cli.profile_dir.unwrap_or_else(|| String::from(DEFAULT_PROFILE_DIR)),
+    };
 
     if profile_config.enabled {
         let path = std::path::Path::new(&profile_config.dir);
@@ -209,31 +199,15 @@ fn main() {
         }
     }
 
-    let command = &clean_args[1];
-    let result = match command.as_str() {
-        "download" => download_models_pipeline(),
-        "transcribe" => {
-            if clean_args.len() < 3 {
-                println!("Error: transcribe requires a path to a WAV audio file.\n");
-                print_help();
-                return;
-            }
-            run_transcription(&clean_args[2], &profile_config)
+    let result = match cli.command {
+        Commands::Download => download_models_pipeline(),
+        Commands::Transcribe { wav_path } => {
+            run_transcription(&wav_path, &profile_config)
         }
-        "pipeline" => {
-            if clean_args.len() < 3 {
-                println!("Error: pipeline requires a path to a WAV audio file.\n");
-                print_help();
-                return;
-            }
-            run_pipeline(&clean_args[2], &profile_config)
+        Commands::Pipeline { wav_path } => {
+            run_pipeline(&wav_path, &profile_config)
         }
-        "live" => run_live_assistant(&profile_config),
-        _ => {
-            println!("Error: Unknown command '{}'\n", command);
-            print_help();
-            return;
-        }
+        Commands::Live => run_live_assistant(&profile_config),
     };
 
     if let Err(e) = result {
@@ -279,53 +253,39 @@ mod tests {
 
     #[test]
     fn test_parse_profile_args_none() {
-        let args = vec!["assistant_at_home".to_string(), "transcribe".to_string(), "file.wav".to_string()];
-        let (config, clean) = parse_profile_args(&args);
-        assert!(!config.enabled);
-        assert_eq!(config.dir, DEFAULT_PROFILE_DIR);
-        assert_eq!(clean, args);
+        let args = vec!["assistant_at_home", "transcribe", "file.wav"];
+        let cli = Cli::try_parse_from(args).unwrap();
+        assert!(!cli.profile);
+        assert_eq!(cli.profile_dir, None);
+        assert_eq!(cli.command, Commands::Transcribe { wav_path: "file.wav".to_string() });
     }
 
     #[test]
     fn test_parse_profile_args_enable() {
         let args = vec![
-            "assistant_at_home".to_string(),
-            "--profile".to_string(),
-            "transcribe".to_string(),
-            "file.wav".to_string(),
+            "assistant_at_home",
+            "--profile",
+            "transcribe",
+            "file.wav",
         ];
-        let (config, clean) = parse_profile_args(&args);
-        assert!(config.enabled);
-        assert_eq!(config.dir, DEFAULT_PROFILE_DIR);
-        assert_eq!(clean, vec!["assistant_at_home".to_string(), "transcribe".to_string(), "file.wav".to_string()]);
+        let cli = Cli::try_parse_from(args).unwrap();
+        assert!(cli.profile);
+        assert_eq!(cli.profile_dir, None);
+        assert_eq!(cli.command, Commands::Transcribe { wav_path: "file.wav".to_string() });
     }
 
     #[test]
     fn test_parse_profile_args_dir() {
         let args = vec![
-            "assistant_at_home".to_string(),
-            "transcribe".to_string(),
-            "--profile-dir".to_string(),
-            "/tmp/custom".to_string(),
-            "file.wav".to_string(),
+            "assistant_at_home",
+            "transcribe",
+            "file.wav",
+            "--profile-dir",
+            "/tmp/custom",
         ];
-        let (config, clean) = parse_profile_args(&args);
-        assert!(config.enabled);
-        assert_eq!(config.dir, "/tmp/custom");
-        assert_eq!(clean, vec!["assistant_at_home".to_string(), "transcribe".to_string(), "file.wav".to_string()]);
-    }
-
-    #[test]
-    fn test_parse_profile_args_dir_equals() {
-        let args = vec![
-            "assistant_at_home".to_string(),
-            "transcribe".to_string(),
-            "--profile-dir=/tmp/custom2".to_string(),
-            "file.wav".to_string(),
-        ];
-        let (config, clean) = parse_profile_args(&args);
-        assert!(config.enabled);
-        assert_eq!(config.dir, "/tmp/custom2");
-        assert_eq!(clean, vec!["assistant_at_home".to_string(), "transcribe".to_string(), "file.wav".to_string()]);
+        let cli = Cli::try_parse_from(args).unwrap();
+        assert!(!cli.profile); // profile is false, but profile_dir is some
+        assert_eq!(cli.profile_dir, Some("/tmp/custom".to_string()));
+        assert_eq!(cli.command, Commands::Transcribe { wav_path: "file.wav".to_string() });
     }
 }

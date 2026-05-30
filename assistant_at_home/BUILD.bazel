@@ -17,6 +17,7 @@ rust_binary(
         "@crates//:tokenizers",
         "@crates//:hound",
         "@crates//:ureq",
+        "@crates//:clap",
     ],
     data = glob([
         "models/**",

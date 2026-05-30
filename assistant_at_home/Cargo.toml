@@ -9,4 +9,5 @@ ndarray = "0.17.2"
 tokenizers = "0.20.0"
 hound = "3.5.1"
 ureq = "2.9.6"
+clap = { version = "4.5.4", features = ["derive"] }
 

@@ -92,6 +92,11 @@ crate.spec(
     package = "ureq",
     version = "2.9.6",
 )
+crate.spec(
+    package = "clap",
+    version = "4.5.4",
+    features = ["derive"],
+)
 crate.from_specs()
 use_repo(crate, "crates")
 
