@@ -232,7 +232,10 @@ pub fn transcribe_speech(
     Ok(tokens)
 }
 
-pub fn get_transcription(audio_path: &str) -> Result<String, Box<dyn std::error::Error>> {
+pub fn get_transcription(
+    audio_path: &str,
+    profile_config: &crate::ProfileConfig,
+) -> Result<String, Box<dyn std::error::Error>> {
     use crate::download::get_path;
 
     // Check if required files exist
@@ -245,8 +248,14 @@ pub fn get_transcription(audio_path: &str) -> Result<String, Box<dyn std::error:
     }
 
     println!("Initializing ONNX Runtime sessions...");
-    let mut encoder_session = Session::builder()?.commit_from_file(&enc_p)?;
-    let mut decoder_session = Session::builder()?.commit_from_file(&dec_p)?;
+    let mut encoder_builder = Session::builder()?;
+    let mut decoder_builder = Session::builder()?;
+    if profile_config.enabled {
+        encoder_builder = encoder_builder.with_profiling(format!("{}/moonshine_encoder", profile_config.dir))?;
+        decoder_builder = decoder_builder.with_profiling(format!("{}/moonshine_decoder", profile_config.dir))?;
+    }
+    let mut encoder_session = encoder_builder.commit_from_file(&enc_p)?;
+    let mut decoder_session = decoder_builder.commit_from_file(&dec_p)?;
 
     println!("Loading tokenizer...");
     let tokenizer = Tokenizer::from_file(&tok_p).map_err(|e| e.to_string())?;
@@ -256,18 +265,33 @@ pub fn get_transcription(audio_path: &str) -> Result<String, Box<dyn std::error:
     let audio_data = load_wav_file(&audio_p)?;
 
     println!("Transcribing speech...");
-    let tokens = transcribe_speech(
+    let tokens_res = transcribe_speech(
         audio_data,
         &mut encoder_session,
         &mut decoder_session,
         &TINY_PARAMS,
-    )?;
+    );
 
+    if profile_config.enabled {
+        match encoder_session.end_profiling() {
+            Ok(path) => println!("Encoder profiling file written to: {}", path),
+            Err(e) => eprintln!("Failed to end encoder profiling: {}", e),
+        }
+        match decoder_session.end_profiling() {
+            Ok(path) => println!("Decoder profiling file written to: {}", path),
+            Err(e) => eprintln!("Failed to end decoder profiling: {}", e),
+        }
+    }
+
+    let tokens = tokens_res?;
     decode_tokens_to_string(&tokens, &tokenizer)
 }
 
-pub fn run_transcription(audio_path: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let transcription = get_transcription(audio_path)?;
+pub fn run_transcription(
+    audio_path: &str,
+    profile_config: &crate::ProfileConfig,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let transcription = get_transcription(audio_path, profile_config)?;
     println!(
         "\nTranscription Results:\n----------------------\n{}\n",
         transcription

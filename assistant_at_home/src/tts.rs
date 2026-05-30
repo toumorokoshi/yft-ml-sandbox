@@ -9,6 +9,7 @@ pub struct TtsPipeline {
     session: Session,
     vocab: HashMap<char, i64>,
     voices_data: Vec<f32>,
+    profiling_enabled: bool,
 }
 
 /// Loads a binary voice style file into a flat vector of floats.
@@ -292,7 +293,7 @@ pub fn phonemize(text: &str) -> String {
 
 impl TtsPipeline {
     /// Loads the Kokoro TTS ONNX model, tokenizer, and voice style embedding.
-    pub fn load() -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn load(profile_config: &crate::ProfileConfig) -> Result<Self, Box<dyn std::error::Error>> {
         let model_path = get_path(KOKORO_MODEL_PATH);
         let tok_path = get_path(KOKORO_TOKENIZER_PATH);
         let voice_path = get_path(KOKORO_VOICE_PATH);
@@ -302,7 +303,11 @@ impl TtsPipeline {
         }
 
         println!("Initializing Kokoro TTS ONNX Runtime session...");
-        let session = Session::builder()?.commit_from_file(&model_path)?;
+        let mut builder = Session::builder()?;
+        if profile_config.enabled {
+            builder = builder.with_profiling(format!("{}/kokoro_tts", profile_config.dir))?;
+        }
+        let session = builder.commit_from_file(&model_path)?;
 
         println!("Loading Kokoro TTS tokenizer configuration...");
         let tok_json = std::fs::read_to_string(&tok_path)?;
@@ -316,6 +321,7 @@ impl TtsPipeline {
             session,
             vocab,
             voices_data,
+            profiling_enabled: profile_config.enabled,
         })
     }
 
@@ -387,6 +393,17 @@ impl TtsPipeline {
     }
 }
 
+impl Drop for TtsPipeline {
+    fn drop(&mut self) {
+        if self.profiling_enabled {
+            match self.session.end_profiling() {
+                Ok(path) => println!("TTS profiling file written to: {}", path),
+                Err(e) => eprintln!("Failed to end TTS profiling: {}", e),
+            }
+        }
+    }
+}
+
 /// Helper function to save a float32 audio buffer as a 16-bit PCM WAV file at 24kHz.
 pub fn save_audio_to_wav(samples: &[f32], path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let spec = hound::WavSpec {
@@ -455,7 +472,7 @@ mod tests {
     #[test]
     #[ignore]
     fn test_integration_tts_synthesis() {
-        let mut pipeline = TtsPipeline::load().unwrap();
+        let mut pipeline = TtsPipeline::load(&crate::ProfileConfig::default()).unwrap();
         let samples = pipeline.synthesize("Hello, how are you?").unwrap();
         assert!(!samples.is_empty());
         let output_path = get_path("test_out.wav");

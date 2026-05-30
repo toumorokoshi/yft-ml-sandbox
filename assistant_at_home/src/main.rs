@@ -9,6 +9,54 @@ use transcribe::run_transcription;
 
 const MAX_TOKENS: usize = 1024;
 
+pub const DEFAULT_PROFILE_DIR: &str = "/tmp";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProfileConfig {
+    pub enabled: bool,
+    pub dir: String,
+}
+
+impl Default for ProfileConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            dir: String::from(DEFAULT_PROFILE_DIR),
+        }
+    }
+}
+
+pub fn parse_profile_args(args: &[String]) -> (ProfileConfig, Vec<String>) {
+    let mut enabled = false;
+    let mut dir = String::from(DEFAULT_PROFILE_DIR);
+    let mut clean_args = Vec::new();
+
+    let mut i = 0;
+    while i < args.len() {
+        if args[i] == "--profile" {
+            enabled = true;
+            i += 1;
+        } else if args[i] == "--profile-dir" {
+            enabled = true;
+            if i + 1 < args.len() {
+                dir = args[i + 1].clone();
+                i += 2;
+            } else {
+                i += 1;
+            }
+        } else if args[i].starts_with("--profile-dir=") {
+            enabled = true;
+            dir = args[i]["--profile-dir=".len()..].to_string();
+            i += 1;
+        } else {
+            clean_args.push(args[i].clone());
+            i += 1;
+        }
+    }
+
+    (ProfileConfig { enabled, dir }, clean_args)
+}
+
 fn print_help() {
     println!(
         "assistant_at_home - Local speech-to-text voice assistant interface\n\n\
@@ -22,13 +70,13 @@ fn print_help() {
     );
 }
 
-fn run_pipeline(audio_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn run_pipeline(audio_path: &str, profile_config: &ProfileConfig) -> Result<(), Box<dyn std::error::Error>> {
     println!("--- Step 1: Transcribing Audio ---");
-    let transcription = transcribe::get_transcription(audio_path)?;
+    let transcription = transcribe::get_transcription(audio_path, profile_config)?;
     println!("Transcribed text: \"{}\"\n", transcription);
 
     println!("--- Step 2: Running LLM (Qwen3) ---");
-    let mut llm_pipeline = llm::LlmPipeline::load()?;
+    let mut llm_pipeline = llm::LlmPipeline::load(profile_config)?;
 
     // Format the transcribed text using ChatML template for Qwen3
     let chat_prompt = format!(
@@ -60,10 +108,10 @@ fn strip_think_tags(text: &str) -> String {
     cleaned
 }
 
-fn run_live_assistant() -> Result<(), Box<dyn std::error::Error>> {
+fn run_live_assistant(profile_config: &ProfileConfig) -> Result<(), Box<dyn std::error::Error>> {
     println!("--- Initializing Voice Assistant Modules ---");
-    let mut llm_pipeline = llm::LlmPipeline::load()?;
-    let mut tts_pipeline = tts::TtsPipeline::load()?;
+    let mut llm_pipeline = llm::LlmPipeline::load(profile_config)?;
+    let mut tts_pipeline = tts::TtsPipeline::load(profile_config)?;
 
     let input_path = download::get_path("assistant_input.wav");
     let output_path = download::get_path("assistant_output.wav");
@@ -80,7 +128,7 @@ fn run_live_assistant() -> Result<(), Box<dyn std::error::Error>> {
 
         // Step 2: Speech to Text
         println!("Transcribing audio...");
-        let transcription = match transcribe::get_transcription(input_path.to_str().unwrap()) {
+        let transcription = match transcribe::get_transcription(input_path.to_str().unwrap(), profile_config) {
             Ok(t) => t,
             Err(e) => {
                 eprintln!("Transcription failed: {}", e);
@@ -145,32 +193,42 @@ fn run_live_assistant() -> Result<(), Box<dyn std::error::Error>> {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    let (profile_config, clean_args) = parse_profile_args(&args);
 
-    if args.len() < 2 {
+    if clean_args.len() < 2 {
         print_help();
         return;
     }
 
-    let command = &args[1];
+    if profile_config.enabled {
+        let path = std::path::Path::new(&profile_config.dir);
+        if !path.exists() {
+            if let Err(e) = std::fs::create_dir_all(path) {
+                eprintln!("Warning: Failed to create profiling directory {}: {}", profile_config.dir, e);
+            }
+        }
+    }
+
+    let command = &clean_args[1];
     let result = match command.as_str() {
         "download" => download_models_pipeline(),
         "transcribe" => {
-            if args.len() < 3 {
+            if clean_args.len() < 3 {
                 println!("Error: transcribe requires a path to a WAV audio file.\n");
                 print_help();
                 return;
             }
-            run_transcription(&args[2])
+            run_transcription(&clean_args[2], &profile_config)
         }
         "pipeline" => {
-            if args.len() < 3 {
+            if clean_args.len() < 3 {
                 println!("Error: pipeline requires a path to a WAV audio file.\n");
                 print_help();
                 return;
             }
-            run_pipeline(&args[2])
+            run_pipeline(&clean_args[2], &profile_config)
         }
-        "live" => run_live_assistant(),
+        "live" => run_live_assistant(&profile_config),
         _ => {
             println!("Error: Unknown command '{}'\n", command);
             print_help();
@@ -217,5 +275,57 @@ mod tests {
     #[test]
     fn test_strip_think_tags_unclosed() {
         assert_eq!(strip_think_tags("hello <think>world"), "hello ");
+    }
+
+    #[test]
+    fn test_parse_profile_args_none() {
+        let args = vec!["assistant_at_home".to_string(), "transcribe".to_string(), "file.wav".to_string()];
+        let (config, clean) = parse_profile_args(&args);
+        assert!(!config.enabled);
+        assert_eq!(config.dir, DEFAULT_PROFILE_DIR);
+        assert_eq!(clean, args);
+    }
+
+    #[test]
+    fn test_parse_profile_args_enable() {
+        let args = vec![
+            "assistant_at_home".to_string(),
+            "--profile".to_string(),
+            "transcribe".to_string(),
+            "file.wav".to_string(),
+        ];
+        let (config, clean) = parse_profile_args(&args);
+        assert!(config.enabled);
+        assert_eq!(config.dir, DEFAULT_PROFILE_DIR);
+        assert_eq!(clean, vec!["assistant_at_home".to_string(), "transcribe".to_string(), "file.wav".to_string()]);
+    }
+
+    #[test]
+    fn test_parse_profile_args_dir() {
+        let args = vec![
+            "assistant_at_home".to_string(),
+            "transcribe".to_string(),
+            "--profile-dir".to_string(),
+            "/tmp/custom".to_string(),
+            "file.wav".to_string(),
+        ];
+        let (config, clean) = parse_profile_args(&args);
+        assert!(config.enabled);
+        assert_eq!(config.dir, "/tmp/custom");
+        assert_eq!(clean, vec!["assistant_at_home".to_string(), "transcribe".to_string(), "file.wav".to_string()]);
+    }
+
+    #[test]
+    fn test_parse_profile_args_dir_equals() {
+        let args = vec![
+            "assistant_at_home".to_string(),
+            "transcribe".to_string(),
+            "--profile-dir=/tmp/custom2".to_string(),
+            "file.wav".to_string(),
+        ];
+        let (config, clean) = parse_profile_args(&args);
+        assert!(config.enabled);
+        assert_eq!(config.dir, "/tmp/custom2");
+        assert_eq!(clean, vec!["assistant_at_home".to_string(), "transcribe".to_string(), "file.wav".to_string()]);
     }
 }

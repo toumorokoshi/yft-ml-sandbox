@@ -10,6 +10,7 @@ pub struct LlmPipeline {
     tokenizer: Tokenizer,
     num_layers: usize,
     eos_token_id: i64,
+    profiling_enabled: bool,
 }
 
 /// Helper function to dynamically count the number of layers in the model.
@@ -158,7 +159,7 @@ pub fn generate_tokens(
 }
 
 impl LlmPipeline {
-    pub fn load() -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn load(profile_config: &crate::ProfileConfig) -> Result<Self, Box<dyn std::error::Error>> {
         use crate::download::get_path;
         let tok_path = get_path(QWEN_TOKENIZER_PATH);
         let model_path = get_path(QWEN_MODEL_PATH);
@@ -170,7 +171,11 @@ impl LlmPipeline {
         }
 
         println!("Initializing LLM ONNX Runtime session...");
-        let session = Session::builder()?.commit_from_file(&model_path)?;
+        let mut builder = Session::builder()?;
+        if profile_config.enabled {
+            builder = builder.with_profiling(format!("{}/qwen_llm", profile_config.dir))?;
+        }
+        let session = builder.commit_from_file(&model_path)?;
 
         println!("Loading LLM tokenizer...");
         let tokenizer = Tokenizer::from_file(&tok_path).map_err(|e| e.to_string())?;
@@ -189,6 +194,7 @@ impl LlmPipeline {
             tokenizer,
             num_layers,
             eos_token_id,
+            profiling_enabled: profile_config.enabled,
         })
     }
 
@@ -220,6 +226,17 @@ impl LlmPipeline {
     }
 }
 
+impl Drop for LlmPipeline {
+    fn drop(&mut self) {
+        if self.profiling_enabled {
+            match self.session.end_profiling() {
+                Ok(path) => println!("LLM profiling file written to: {}", path),
+                Err(e) => eprintln!("Failed to end LLM profiling: {}", e),
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -234,7 +251,7 @@ mod tests {
     #[test]
     #[ignore]
     fn test_integration_llm_generation() {
-        let mut pipeline = LlmPipeline::load().unwrap();
+        let mut pipeline = LlmPipeline::load(&crate::ProfileConfig::default()).unwrap();
         let prompt = "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\nHow are you?<|im_end|>\n<|im_start|>assistant\n";
         let response = pipeline.generate(prompt, 30).unwrap();
         println!("Prompt: {}\nResponse: {}", prompt, response);
