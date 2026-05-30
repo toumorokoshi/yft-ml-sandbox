@@ -7,6 +7,8 @@ rust_binary(
         "src/download.rs",
         "src/transcribe.rs",
         "src/llm.rs",
+        "src/audio.rs",
+        "src/tts.rs",
     ],
     edition = "2024",
     deps = [

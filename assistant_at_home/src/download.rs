@@ -20,6 +20,18 @@ pub const QWEN_MODEL_URL: &str =
 pub const QWEN_TOKENIZER_PATH: &str = "models/qwen3_0.6b/tokenizer.json";
 pub const QWEN_MODEL_PATH: &str = "models/qwen3_0.6b/model_q4.onnx";
 
+// Kokoro Model constants
+pub const KOKORO_TOKENIZER_URL: &str =
+    "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/tokenizer.json";
+pub const KOKORO_MODEL_URL: &str =
+    "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/onnx/model_quantized.onnx";
+pub const KOKORO_VOICE_URL: &str =
+    "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/af_bella.bin";
+
+pub const KOKORO_TOKENIZER_PATH: &str = "models/kokoro/tokenizer.json";
+pub const KOKORO_MODEL_PATH: &str = "models/kokoro/model_quantized.onnx";
+pub const KOKORO_VOICE_PATH: &str = "models/kokoro/af_bella.bin";
+
 /// Resolves a relative path to an absolute path dynamically based on environment.
 pub fn get_path(rel_path: &str) -> std::path::PathBuf {
     if let Ok(manifest_dir) = std::env::var("CARGO_MANIFEST_DIR") {
@@ -84,6 +96,13 @@ pub fn download_models_pipeline() -> Result<(), Box<dyn std::error::Error>> {
     download_file(QWEN_TOKENIZER_URL, &get_path(QWEN_TOKENIZER_PATH))?;
     download_file(QWEN_MODEL_URL, &get_path(QWEN_MODEL_PATH))?;
 
+    // 3. Download TTS (Kokoro) assets
+    println!("\n--- Downloading TTS (Kokoro-82M) assets ---");
+    download_file(KOKORO_TOKENIZER_URL, &get_path(KOKORO_TOKENIZER_PATH))?;
+    download_file(KOKORO_MODEL_URL, &get_path(KOKORO_MODEL_PATH))?;
+    download_file(KOKORO_VOICE_URL, &get_path(KOKORO_VOICE_PATH))?;
+
     println!("\nAll models downloaded successfully!");
     Ok(())
 }
+

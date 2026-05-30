@@ -67,6 +67,23 @@ curl -L -o assistant_at_home/beckett.wav https://raw.githubusercontent.com/moons
 bazel run -c opt //assistant_at_home:assistant_at_home -- pipeline assistant_at_home/beckett.wav
 ```
 
+### Run Live Voice Assistant Loop
+
+To run the fully interactive local voice assistant loop using your device's microphone and speaker:
+
+```bash
+bazel run -c opt //assistant_at_home:assistant_at_home -- live
+```
+
+This command will:
+1. Initialize the Speech-to-Text (Moonshine), LLM (Qwen3), and Text-to-Speech (Kokoro-82M) modules.
+2. Record audio from your microphone (starts a background `arecord` process; press `[Enter]` to stop recording).
+3. Transcribe your speech to text.
+4. Generate a concise text response via the LLM.
+5. Convert that response to an audio file (using Kokoro TTS ONNX).
+6. Play the speech back through your speaker using `aplay`.
+
+
 ### Running Tests
 
 We strictly separate our codebase into pure logic functions operating on data structures (tensors, caches) and I/O wrapper functions (file/network loading) to make testing straightforward.
