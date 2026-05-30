@@ -58,7 +58,10 @@ pub enum Commands {
     },
 
     #[command(about = "Run the live voice assistant loop from the microphone")]
-    Live,
+    Live {
+        #[arg(long, help = "Path to a WAV file to use instead of recording from the microphone")]
+        input: Option<String>,
+    },
 }
 
 fn run_pipeline(audio_path: &str, profile_config: &ProfileConfig) -> Result<(), Box<dyn std::error::Error>> {
@@ -99,7 +102,10 @@ fn strip_think_tags(text: &str) -> String {
     cleaned
 }
 
-fn run_live_assistant(profile_config: &ProfileConfig) -> Result<(), Box<dyn std::error::Error>> {
+fn run_live_assistant(
+    input_wav: Option<&str>,
+    profile_config: &ProfileConfig,
+) -> Result<(), Box<dyn std::error::Error>> {
     println!("--- Initializing Voice Assistant Modules ---");
     let mut llm_pipeline = llm::LlmPipeline::load(profile_config)?;
     let mut tts_pipeline = tts::TtsPipeline::load(profile_config)?;
@@ -107,76 +113,116 @@ fn run_live_assistant(profile_config: &ProfileConfig) -> Result<(), Box<dyn std:
     let input_path = download::get_path("assistant_input.wav");
     let output_path = download::get_path("assistant_output.wav");
 
-    loop {
+    if let Some(wav_file) = input_wav {
         println!("\n==================================================");
-        println!("=== Ready for speech! ===");
+        println!("=== Processing input WAV file: {} ===", wav_file);
 
-        // Step 1: Record from microphone
-        if let Err(e) = audio::record_audio_to_file(input_path.to_str().unwrap()) {
-            eprintln!("Failed to record audio: {}", e);
-            continue;
-        }
+        let resolved_input = download::resolve_user_path(wav_file);
 
         // Step 2: Speech to Text
         println!("Transcribing audio...");
-        let transcription = match transcribe::get_transcription(input_path.to_str().unwrap(), profile_config) {
-            Ok(t) => t,
-            Err(e) => {
-                eprintln!("Transcription failed: {}", e);
-                continue;
-            }
-        };
-
+        let transcription = transcribe::get_transcription(resolved_input.to_str().unwrap(), profile_config)?;
         let trimmed = transcription.trim();
-        if trimmed.is_empty() {
-            println!("No speech detected. Please try again.");
-            continue;
-        }
         println!("You said: \"{}\"", trimmed);
 
-        if trimmed.eq_ignore_ascii_case("exit") || trimmed.eq_ignore_ascii_case("quit") {
-            println!("Exiting live assistant. Goodbye!");
-            break;
+        if !trimmed.is_empty() {
+            // Step 3: Run LLM
+            println!("Thinking...");
+            let chat_prompt = format!(
+                "<|im_start|>system\nYou are a helpful voice assistant. Keep your responses brief and concise, ideal for speech.<|im_end|>\n<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n",
+                trimmed
+            );
+
+            let response = llm_pipeline.generate(&chat_prompt, MAX_TOKENS)?;
+            let response_clean = response.trim();
+            println!("Assistant: \"{}\"", response_clean);
+
+            let response_speak = strip_think_tags(response_clean);
+            let response_speak_trimmed = response_speak.trim();
+
+            // Step 4: Text to Speech
+            println!("Synthesizing speech response...");
+            let audio_data = tts_pipeline.synthesize(response_speak_trimmed)?;
+
+            tts::save_audio_to_wav(&audio_data, &output_path)?;
+
+            // Step 5: Play response audio
+            if let Err(e) = audio::play_audio_file(output_path.to_str().unwrap()) {
+                eprintln!("Failed to play response audio: {}", e);
+            }
         }
+    } else {
+        loop {
+            println!("\n==================================================");
+            println!("=== Ready for speech! ===");
 
-        // Step 3: Run LLM
-        println!("Thinking...");
-        let chat_prompt = format!(
-            "<|im_start|>system\nYou are a helpful voice assistant. Keep your responses brief and concise, ideal for speech.<|im_end|>\n<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n",
-            trimmed
-        );
-
-        let response = match llm_pipeline.generate(&chat_prompt, MAX_TOKENS) {
-            Ok(r) => r,
-            Err(e) => {
-                eprintln!("LLM response generation failed: {}", e);
+            // Step 1: Record from microphone
+            if let Err(e) = audio::record_audio_to_file(input_path.to_str().unwrap()) {
+                eprintln!("Failed to record audio: {}", e);
                 continue;
             }
-        };
-        let response_clean = response.trim();
-        println!("Assistant: \"{}\"", response_clean);
 
-        let response_speak = strip_think_tags(response_clean);
-        let response_speak_trimmed = response_speak.trim();
+            // Step 2: Speech to Text
+            println!("Transcribing audio...");
+            let transcription = match transcribe::get_transcription(input_path.to_str().unwrap(), profile_config) {
+                Ok(t) => t,
+                Err(e) => {
+                    eprintln!("Transcription failed: {}", e);
+                    continue;
+                }
+            };
 
-        // Step 4: Text to Speech
-        println!("Synthesizing speech response...");
-        let audio_data = match tts_pipeline.synthesize(response_speak_trimmed) {
-            Ok(d) => d,
-            Err(e) => {
-                eprintln!("TTS synthesis failed: {}", e);
+            let trimmed = transcription.trim();
+            if trimmed.is_empty() {
+                println!("No speech detected. Please try again.");
                 continue;
             }
-        };
+            println!("You said: \"{}\"", trimmed);
 
-        if let Err(e) = tts::save_audio_to_wav(&audio_data, &output_path) {
-            eprintln!("Failed to save output WAV: {}", e);
-            continue;
-        }
+            if trimmed.eq_ignore_ascii_case("exit") || trimmed.eq_ignore_ascii_case("quit") {
+                println!("Exiting live assistant. Goodbye!");
+                break;
+            }
 
-        // Step 5: Play response audio
-        if let Err(e) = audio::play_audio_file(output_path.to_str().unwrap()) {
-            eprintln!("Failed to play response audio: {}", e);
+            // Step 3: Run LLM
+            println!("Thinking...");
+            let chat_prompt = format!(
+                "<|im_start|>system\nYou are a helpful voice assistant. Keep your responses brief and concise, ideal for speech.<|im_end|>\n<|im_start|>user\n{}<|im_end|>\n<|im_start|>assistant\n",
+                trimmed
+            );
+
+            let response = match llm_pipeline.generate(&chat_prompt, MAX_TOKENS) {
+                Ok(r) => r,
+                Err(e) => {
+                    eprintln!("LLM response generation failed: {}", e);
+                    continue;
+                }
+            };
+            let response_clean = response.trim();
+            println!("Assistant: \"{}\"", response_clean);
+
+            let response_speak = strip_think_tags(response_clean);
+            let response_speak_trimmed = response_speak.trim();
+
+            // Step 4: Text to Speech
+            println!("Synthesizing speech response...");
+            let audio_data = match tts_pipeline.synthesize(response_speak_trimmed) {
+                Ok(d) => d,
+                Err(e) => {
+                    eprintln!("TTS synthesis failed: {}", e);
+                    continue;
+                }
+            };
+
+            if let Err(e) = tts::save_audio_to_wav(&audio_data, &output_path) {
+                eprintln!("Failed to save output WAV: {}", e);
+                continue;
+            }
+
+            // Step 5: Play response audio
+            if let Err(e) = audio::play_audio_file(output_path.to_str().unwrap()) {
+                eprintln!("Failed to play response audio: {}", e);
+            }
         }
     }
     Ok(())
@@ -207,7 +253,7 @@ fn main() {
         Commands::Pipeline { wav_path } => {
             run_pipeline(&wav_path, &profile_config)
         }
-        Commands::Live => run_live_assistant(&profile_config),
+        Commands::Live { input } => run_live_assistant(input.as_deref(), &profile_config),
     };
 
     if let Err(e) = result {
@@ -287,5 +333,19 @@ mod tests {
         assert!(!cli.profile); // profile is false, but profile_dir is some
         assert_eq!(cli.profile_dir, Some("/tmp/custom".to_string()));
         assert_eq!(cli.command, Commands::Transcribe { wav_path: "file.wav".to_string() });
+    }
+
+    #[test]
+    fn test_parse_live_default() {
+        let args = vec!["assistant_at_home", "live"];
+        let cli = Cli::try_parse_from(args).unwrap();
+        assert_eq!(cli.command, Commands::Live { input: None });
+    }
+
+    #[test]
+    fn test_parse_live_with_input() {
+        let args = vec!["assistant_at_home", "live", "--input", "test.wav"];
+        let cli = Cli::try_parse_from(args).unwrap();
+        assert_eq!(cli.command, Commands::Live { input: Some("test.wav".to_string()) });
     }
 }
