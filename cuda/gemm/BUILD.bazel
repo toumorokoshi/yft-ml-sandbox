@@ -1,0 +1,17 @@
+genrule(
+    name = "gemm_benchmark_bin",
+    srcs = ["gemm.cu"],
+    outs = ["gemm_benchmark"],
+    cmd = "LD_LIBRARY_PATH=/usr/local/cuda/lib64:$${LD_LIBRARY_PATH:-} nvcc -O3 -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lcublas -lcudart $(SRCS) -o $(OUTS)",
+    executable = True,
+    local = 1,
+    tags = ["no-sandbox"],
+    visibility = ["//visibility:public"],
+)
+
+sh_test(
+    name = "gemm_benchmark_test",
+    srcs = ["run_benchmark.sh"],
+    data = [":gemm_benchmark_bin"],
+    tags = ["no-sandbox"],
+)

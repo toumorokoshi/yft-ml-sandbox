@@ -21,3 +21,19 @@ This is already configured in the `.venv/bin/activate` script.
 ## Updating Dependencies
 
 `bazel run //:requirements.update`
+
+## CUDA Benchmarks
+
+For systems with NVIDIA GPUs, we have CUDA-based benchmarks:
+
+### Running the GEMM Benchmark
+
+To compile and run the GEMM benchmark to measure peak FP32, TF32, and FP16 TFLOPS:
+
+```bash
+# Build the benchmark using Bazel
+bazel build //cuda/gemm:gemm_benchmark_bin
+
+# Run the benchmark
+bazel test //cuda/gemm:gemm_benchmark_test --test_output=all
+```
