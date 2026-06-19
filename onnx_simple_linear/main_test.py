@@ -3,8 +3,8 @@ import tempfile
 import unittest
 import onnx
 import torch
-from simple_linear_onnx.model import create_model, generate_dummy_input, export_to_onnx_bytes, INPUT_DIM, OUTPUT_DIM
-from simple_linear_onnx.main import save_bytes_to_file
+from onnx_simple_linear.model import create_model, generate_dummy_input, export_to_onnx_bytes, INPUT_DIM, OUTPUT_DIM
+from onnx_simple_linear.main import save_bytes_to_file
 
 class TestSimpleLinearONNX(unittest.TestCase):
     def test_model_creation(self) -> None:

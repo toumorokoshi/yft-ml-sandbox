@@ -1,14 +1,15 @@
 # named the non-bazel-standard "requirements.txt" to get
 # vscode to auto-detect this when creating a
 # virtual environment.
---extra-index-url https://download.pytorch.org/whl/rocm6.4
-torch==2.9.1+rocm6.4
-torchvision==0.24.1+rocm6.4
+# --extra-index-url https://download.pytorch.org/whl/rocm6.4
+# add +rocm6.4 for AMD
+# onnxruntime-rocm==1.22.2post1
+torch==2.9.1
+torchvision==0.24.1
 scipy==1.16.3
 asciichartpy==1.5.25
 onnx==1.20.0
 onnxscript==0.5.7
-onnxruntime-rocm==1.22.2post1
 gymnasium==1.0.0
 highway-env==1.10.2
 matplotlib==3.10.0

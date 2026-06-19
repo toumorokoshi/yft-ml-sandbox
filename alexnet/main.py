@@ -70,10 +70,11 @@ def export_model_to_onnx_bytes(model: nn.Module, input_size: tuple[int, int, int
         example_inputs,
         buffer,
         export_params=True,
-        opset_version=11,
+        opset_version=18,
         do_constant_folding=True,
         input_names=["input"],
         output_names=["output"],
+        dynamo=False,
     )
     return buffer.getvalue()
 

@@ -6,7 +6,6 @@ py_library(
     deps = [
         "@pypi//onnx",
         "@pypi//torch",
-        "@pypi//pytorch_triton_rocm",
     ],
     visibility = ["//visibility:public"],
 )

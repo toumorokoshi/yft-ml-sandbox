@@ -36,5 +36,6 @@ def export_to_onnx_bytes(model: nn.Module, dummy_input: torch.Tensor) -> bytes:
         do_constant_folding=True,
         input_names=["input"],
         output_names=["output"],
+        dynamo=False,
     )
     return buffer.getvalue()
