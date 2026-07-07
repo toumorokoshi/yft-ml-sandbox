@@ -15,3 +15,21 @@ sh_test(
     data = [":gemm_benchmark_bin"],
     tags = ["no-sandbox"],
 )
+
+genrule(
+    name = "wmma_nvfp4_benchmark_bin",
+    srcs = ["wmma_nvfp4.cu"],
+    outs = ["wmma_nvfp4_benchmark"],
+    cmd = "LD_LIBRARY_PATH=/usr/local/cuda/lib64:$${LD_LIBRARY_PATH:-} nvcc -O3 -gencode arch=compute_121,code=sm_121 -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lcublas -lcublasLt -lcudart $(SRCS) -o $(OUTS)",
+    executable = True,
+    local = 1,
+    tags = ["no-sandbox"],
+    visibility = ["//visibility:public"],
+)
+
+sh_test(
+    name = "wmma_nvfp4_benchmark_test",
+    srcs = ["run_wmma_benchmark.sh"],
+    data = [":wmma_nvfp4_benchmark_bin"],
+    tags = ["no-sandbox"],
+)
