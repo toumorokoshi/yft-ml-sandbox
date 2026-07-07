@@ -473,7 +473,7 @@ void run_benchmark(cublasHandle_t handle, cublasLtHandle_t ltHandle, int N_size)
     cublasLtMatmulDesc_t opDesc_fp8 = nullptr;
     cublasLtMatmulPreference_t pref_fp8 = nullptr;
     void* workspace_fp8 = nullptr;
-    uint64_t workspaceSize_fp8 = 4 * 1024 * 1024;
+    uint64_t workspaceSize_fp8 = 128 * 1024 * 1024;
 
     do {
         cublasStatus_t status;
@@ -557,7 +557,7 @@ void run_benchmark(cublasHandle_t handle, cublasLtHandle_t ltHandle, int N_size)
     cublasLtMatmulDesc_t opDesc_fp4 = nullptr;
     cublasLtMatmulPreference_t pref_fp4 = nullptr;
     void* workspace_fp4 = nullptr;
-    uint64_t workspaceSize_fp4 = 4 * 1024 * 1024;
+    uint64_t workspaceSize_fp4 = 128 * 1024 * 1024;
 
     do {
         cublasStatus_t status;
@@ -781,7 +781,7 @@ void run_benchmark(cublasHandle_t handle, cublasLtHandle_t ltHandle, int N_size)
     cublasLtMatmulDesc_t opDesc_fp4_wb = nullptr;
     cublasLtMatmulPreference_t pref_fp4_wb = nullptr;
     void* workspace_fp4_wb = nullptr;
-    uint64_t workspaceSize_fp4_wb = 4 * 1024 * 1024;
+    uint64_t workspaceSize_fp4_wb = 128 * 1024 * 1024;
 
     do {
         cublasStatus_t status;
@@ -831,51 +831,85 @@ void run_benchmark(cublasHandle_t handle, cublasLtHandle_t ltHandle, int N_size)
         fillScalesKernel<<< (scale_D_size + threads_convert - 1) / threads_convert, threads_convert>>>(d_scale_D, scale_D_size, scale_D_val);
         CHECK_CUDA(cudaDeviceSynchronize());
 
-        std::vector<cublasLtMatmulHeuristicResult_t> heuristicResults(1);
+        std::vector<cublasLtMatmulHeuristicResult_t> heuristicResults(40);
         int returnedAlgoCount = 0;
         status = cublasLtMatmulAlgoGetHeuristic(
-            ltHandle, opDesc_fp4_wb, Adesc_fp4_wb, Bdesc_fp4_wb, Cdesc_fp4_wb, Ddesc_fp4_wb, pref_fp4_wb, 1, heuristicResults.data(), &returnedAlgoCount
+            ltHandle, opDesc_fp4_wb, Adesc_fp4_wb, Bdesc_fp4_wb, Cdesc_fp4_wb, Ddesc_fp4_wb, pref_fp4_wb, 40, heuristicResults.data(), &returnedAlgoCount
         );
         if (status != CUBLAS_STATUS_SUCCESS || returnedAlgoCount == 0) break;
 
-        // Try setting tile ID 128x128 explicitly (since we know it is the only supported one)
-        int32_t tileId = CUBLASLT_MATMUL_TILE_128x128;
-        cublasLtMatmulAlgo_t algo = heuristicResults[0].algo;
-        status = cublasLtMatmulAlgoConfigSetAttribute(&algo, CUBLASLT_ALGO_CONFIG_TILE_ID, &tileId, sizeof(tileId));
-        if (status == CUBLAS_STATUS_SUCCESS) {
-            // Verify execution compatibility
-            cublasStatus_t run_status = cublasLtMatmul(
-                ltHandle, opDesc_fp4_wb, &alpha, d_B_fp4, Adesc_fp4_wb, d_A_fp4, Bdesc_fp4_wb, &beta,
-                d_C_half, Cdesc_fp4_wb, d_D_fp4, Ddesc_fp4_wb, &algo, workspace_fp4_wb, workspaceSize_fp4_wb, nullptr
-            );
-            if (run_status == CUBLAS_STATUS_SUCCESS) {
-                fp4_wb_tested = true;
-                
-                // Warmup
-                for (int i = 0; i < warmup_runs; ++i) {
-                    cublasLtMatmul(ltHandle, opDesc_fp4_wb, &alpha, d_B_fp4, Adesc_fp4_wb, d_A_fp4, Bdesc_fp4_wb, &beta, d_C_half, Cdesc_fp4_wb, d_D_fp4, Ddesc_fp4_wb, &algo, workspace_fp4_wb, workspaceSize_fp4_wb, nullptr);
+        float best_ms = 1e9f;
+        double best_tflops = 0.0;
+        bool best_ok = false;
+        cublasLtMatmulAlgo_t best_algo;
+        bool found_any = false;
+
+        for (int a = 0; a < returnedAlgoCount; ++a) {
+            std::vector<int32_t> tiles_to_try = {-1, CUBLASLT_MATMUL_TILE_128x128};
+            std::vector<int32_t> splitk_vals = {1, 2, 4, 8};
+            for (int32_t tileId : tiles_to_try) {
+                for (int32_t splitk : splitk_vals) {
+                    cublasLtMatmulAlgo_t algo = heuristicResults[a].algo;
+                    if (tileId != -1) {
+                        status = cublasLtMatmulAlgoConfigSetAttribute(&algo, CUBLASLT_ALGO_CONFIG_TILE_ID, &tileId, sizeof(tileId));
+                        if (status != CUBLAS_STATUS_SUCCESS) continue;
+                    }
+                    status = cublasLtMatmulAlgoConfigSetAttribute(&algo, CUBLASLT_ALGO_CONFIG_SPLITK_NUM, &splitk, sizeof(splitk));
+                    if (status != CUBLAS_STATUS_SUCCESS) continue;
+
+                    // Verify compatibility
+                    cublasStatus_t run_status = cublasLtMatmul(
+                        ltHandle, opDesc_fp4_wb, &alpha, d_B_fp4, Adesc_fp4_wb, d_A_fp4, Bdesc_fp4_wb, &beta,
+                        d_C_half, Cdesc_fp4_wb, d_D_fp4, Ddesc_fp4_wb, &algo, workspace_fp4_wb, workspaceSize_fp4_wb, nullptr
+                    );
+                    if (run_status != CUBLAS_STATUS_SUCCESS) continue;
+
+                    // Warmup
+                    for (int i = 0; i < warmup_runs; ++i) {
+                        cublasLtMatmul(ltHandle, opDesc_fp4_wb, &alpha, d_B_fp4, Adesc_fp4_wb, d_A_fp4, Bdesc_fp4_wb, &beta, d_C_half, Cdesc_fp4_wb, d_D_fp4, Ddesc_fp4_wb, &algo, workspace_fp4_wb, workspaceSize_fp4_wb, nullptr);
+                    }
+                    CHECK_CUDA(cudaDeviceSynchronize());
+
+                    CHECK_CUDA(cudaEventRecord(start));
+                    for (int i = 0; i < benchmark_runs; ++i) {
+                        cublasLtMatmul(ltHandle, opDesc_fp4_wb, &alpha, d_B_fp4, Adesc_fp4_wb, d_A_fp4, Bdesc_fp4_wb, &beta, d_C_half, Cdesc_fp4_wb, d_D_fp4, Ddesc_fp4_wb, &algo, workspace_fp4_wb, workspaceSize_fp4_wb, nullptr);
+                    }
+                    CHECK_CUDA(cudaEventRecord(stop));
+                    CHECK_CUDA(cudaEventSynchronize(stop));
+
+                    float ms = 0.0f;
+                    CHECK_CUDA(cudaEventElapsedTime(&ms, start, stop));
+
+                    // Verification
+                    std::vector<__nv_fp4_storage_t> h_D_fp4(M * N / 2);
+                    CHECK_CUDA(cudaMemcpy(h_D_fp4.data(), d_D_fp4, M * N / 2, cudaMemcpyDeviceToHost));
+                    std::vector<float> h_D_float(M * N);
+                    fp4ToFloat(h_D_fp4.data(), h_D_float.data(), M * N, scale_D_val);
+                    bool ok = verify_fp4_writeback(h_A.data(), h_B.data(), h_D_float.data(), M, N, K, 128);
+
+                    if (ok && ms < best_ms) {
+                        best_ms = ms;
+                        best_tflops = (gflops_base / ((ms / benchmark_runs) / 1000.0f)) / 1e12;
+                        best_ok = true;
+                        best_algo = algo;
+                        found_any = true;
+                    }
                 }
-                CHECK_CUDA(cudaDeviceSynchronize());
-
-                CHECK_CUDA(cudaEventRecord(start));
-                for (int i = 0; i < benchmark_runs; ++i) {
-                    cublasLtMatmul(ltHandle, opDesc_fp4_wb, &alpha, d_B_fp4, Adesc_fp4_wb, d_A_fp4, Bdesc_fp4_wb, &beta, d_C_half, Cdesc_fp4_wb, d_D_fp4, Ddesc_fp4_wb, &algo, workspace_fp4_wb, workspaceSize_fp4_wb, nullptr);
-                }
-                CHECK_CUDA(cudaEventRecord(stop));
-                CHECK_CUDA(cudaEventSynchronize(stop));
-
-                CHECK_CUDA(cudaEventElapsedTime(&ms_cublas_fp4_wb, start, stop));
-                float avg_sec = (ms_cublas_fp4_wb / benchmark_runs) / 1000.0f;
-                tflops_cublas_fp4_wb = (gflops_base / avg_sec) / 1e12;
-
-                // Verification
-                std::vector<__nv_fp4_storage_t> h_D_fp4(M * N / 2);
-                CHECK_CUDA(cudaMemcpy(h_D_fp4.data(), d_D_fp4, M * N / 2, cudaMemcpyDeviceToHost));
-                std::vector<float> h_D_float(M * N);
-                fp4ToFloat(h_D_fp4.data(), h_D_float.data(), M * N, scale_D_val);
-
-                cublas_fp4_wb_ok = verify_fp4_writeback(h_A.data(), h_B.data(), h_D_float.data(), M, N, K, 128);
             }
+        }
+
+        if (found_any) {
+            fp4_wb_tested = true;
+            ms_cublas_fp4_wb = best_ms;
+            tflops_cublas_fp4_wb = best_tflops;
+            cublas_fp4_wb_ok = best_ok;
+
+            // Re-run best to ensure state correctness
+            cublasLtMatmul(
+                ltHandle, opDesc_fp4_wb, &alpha, d_B_fp4, Adesc_fp4_wb, d_A_fp4, Bdesc_fp4_wb, &beta,
+                d_C_half, Cdesc_fp4_wb, d_D_fp4, Ddesc_fp4_wb, &best_algo, workspace_fp4_wb, workspaceSize_fp4_wb, nullptr
+            );
+            CHECK_CUDA(cudaDeviceSynchronize());
         }
     } while (0);
 
