@@ -57,12 +57,13 @@ Below is the observed performance for square matrices on the system's GB10 GPU (
 
 | Implementation | Time (ms) | TFLOPS | Status |
 | :--- | :--- | :--- | :--- |
-| **cuBLAS SGEMM (FP32)** | 54.62 | 20.13 | PASS |
-| **Custom WMMA (FP16)** | 427.29 | 2.57 | PASS |
-| **Custom WMMA V2 (FP16, 32x32)** | 52.60 | **20.90** | PASS |
-| **cuBLAS HGEMM (FP16)** | 12.17 | 90.36 | PASS |
-| **cuBLASLt GEMM (FP8)** | 7.44 | 147.72 | PASS |
-| **cuBLASLt FP4 (Tile 128x128)** | 3.34 | **329.43** | PASS |
+| **cuBLAS SGEMM (FP32)** | 54.40 | 20.21 | PASS |
+| **Custom WMMA (FP16)** | 391.23 | 2.81 | PASS |
+| **Custom WMMA V2 (FP16, 32x32)** | 56.47 | **19.47** | PASS |
+| **cuBLAS HGEMM (FP16)** | 13.19 | 83.37 | PASS |
+| **cuBLASLt GEMM (FP8)** | 6.78 | 162.19 | PASS |
+| **cuBLASLt FP4 (Tile 128x128)** | 3.39 | 324.73 | PASS |
+| **cuBLASLt FP4 (FP4 Writeback)** | 2.93 | **375.92** | PASS |
 
 ### Blackwell NVFP4 Tile Size Sweep
 
