@@ -10,6 +10,8 @@
 #include <cmath>
 #include <iomanip>
 #include <cstdlib>
+#include <unordered_map>
+#include <string>
 
 using namespace nvcuda;
 
@@ -129,6 +131,56 @@ __global__ void gemm_wmma_fp16(
     wmma::store_matrix_sync(C + row * N + col, c_frag, N, wmma::mem_row_major);
 }
 
+// Custom Warp-level C++ WMMA GEMM with Larger Tile Sizes
+// Each block computes a 64x64 tile of C, and each warp computes a 32x32 tile using 4 accumulator fragments.
+__global__ void gemm_wmma_fp16_tiled_32x32(
+    const __half* A, const __half* B, float* C,
+    int M, int N, int K) {
+    
+    // Each block contains blockDim.x = 32 (1 warp) and blockDim.y = 4 (4 warps total)
+    // We arrange the 4 warps as a 2x2 grid inside the 64x64 block tile.
+    int warpId = threadIdx.y;
+    int warpRow = warpId / 2; // 0 or 1
+    int warpCol = warpId % 2; // 0 or 1
+    
+    int row = (blockIdx.y * 2 + warpRow) * 32;
+    int col = (blockIdx.x * 2 + warpCol) * 32;
+    
+    if (row >= M || col >= N) return;
+    
+    // Declare 4 accumulator fragments for the 32x32 output tile
+    wmma::fragment<wmma::accumulator, 16, 16, 16, float> c_frag[2][2];
+    wmma::fill_fragment(c_frag[0][0], 0.0f);
+    wmma::fill_fragment(c_frag[0][1], 0.0f);
+    wmma::fill_fragment(c_frag[1][0], 0.0f);
+    wmma::fill_fragment(c_frag[1][1], 0.0f);
+    
+    // Loop over the K dimension in steps of 16
+    for (int k = 0; k < K; k += 16) {
+        // Load two A fragments along the rows (row and row + 16)
+        wmma::fragment<wmma::matrix_a, 16, 16, 16, __half, wmma::row_major> a_frag[2];
+        wmma::load_matrix_sync(a_frag[0], A + row * K + k, K);
+        wmma::load_matrix_sync(a_frag[1], A + (row + 16) * K + k, K);
+        
+        // Load two B fragments along the columns (col and col + 16)
+        wmma::fragment<wmma::matrix_b, 16, 16, 16, __half, wmma::row_major> b_frag[2];
+        wmma::load_matrix_sync(b_frag[0], B + k * N + col, N);
+        wmma::load_matrix_sync(b_frag[1], B + k * N + col + 16, N);
+        
+        // Perform 4 matrix multiplications (2x2 MMA tiling)
+        wmma::mma_sync(c_frag[0][0], a_frag[0], b_frag[0], c_frag[0][0]);
+        wmma::mma_sync(c_frag[0][1], a_frag[0], b_frag[1], c_frag[0][1]);
+        wmma::mma_sync(c_frag[1][0], a_frag[1], b_frag[0], c_frag[1][0]);
+        wmma::mma_sync(c_frag[1][1], a_frag[1], b_frag[1], c_frag[1][1]);
+    }
+    
+    // Store the 4 accumulator fragments back to global memory
+    wmma::store_matrix_sync(C + row * N + col, c_frag[0][0], N, wmma::mem_row_major);
+    wmma::store_matrix_sync(C + row * N + col + 16, c_frag[0][1], N, wmma::mem_row_major);
+    wmma::store_matrix_sync(C + (row + 16) * N + col, c_frag[1][0], N, wmma::mem_row_major);
+    wmma::store_matrix_sync(C + (row + 16) * N + col + 16, c_frag[1][1], N, wmma::mem_row_major);
+}
+
 // Host-based sub-matrix verification
 bool verify_results(const float* A, const float* B, const float* C, int M, int N, int K, int check_size, float rel_tolerance = 1e-4f) {
     int limit_M = std::min(M, check_size);
@@ -159,6 +211,14 @@ void run_benchmark(cublasHandle_t handle, cublasLtHandle_t ltHandle, int N_size)
     int M = N_size;
     int N = N_size;
     int K = N_size;
+
+    struct FP4TileResult {
+        std::string name;
+        float time_ms;
+        double tflops;
+        bool ok;
+    };
+    std::vector<FP4TileResult> fp4_tile_results;
 
     std::cout << "\n============================================\n";
     std::cout << "Benchmarking Matrix Size: " << M << "x" << N << "x" << K << "\n";
@@ -290,6 +350,32 @@ void run_benchmark(cublasHandle_t handle, cublasLtHandle_t ltHandle, int N_size)
     bool custom_wmma_ok = verify_results(h_A.data(), h_B.data(), h_C.data(), M, N, K, 128, 1e-2f);
 
     // ----------------------------------------------------
+    // 2b. Custom WMMA GEMM V2 (32x32 Warp Tile, 64x64 Block Tile)
+    // ----------------------------------------------------
+    dim3 block_wmma_tiled(32, 4);
+    dim3 grid_wmma_tiled((N + 63) / 64, (M + 63) / 64);
+
+    for (int i = 0; i < warmup_runs; ++i) {
+        gemm_wmma_fp16_tiled_32x32<<<grid_wmma_tiled, block_wmma_tiled>>>(d_A_half, d_B_half, d_C, M, N, K);
+    }
+    CHECK_CUDA(cudaDeviceSynchronize());
+
+    CHECK_CUDA(cudaEventRecord(start));
+    for (int i = 0; i < benchmark_runs; ++i) {
+        gemm_wmma_fp16_tiled_32x32<<<grid_wmma_tiled, block_wmma_tiled>>>(d_A_half, d_B_half, d_C, M, N, K);
+    }
+    CHECK_CUDA(cudaEventRecord(stop));
+    CHECK_CUDA(cudaEventSynchronize(stop));
+
+    float ms_custom_wmma_tiled = 0.0f;
+    CHECK_CUDA(cudaEventElapsedTime(&ms_custom_wmma_tiled, start, stop));
+    float avg_sec_custom_wmma_tiled = (ms_custom_wmma_tiled / benchmark_runs) / 1000.0f;
+    double tflops_custom_wmma_tiled = (gflops_base / avg_sec_custom_wmma_tiled) / 1e12;
+
+    CHECK_CUDA(cudaMemcpy(h_C.data(), d_C, size_C, cudaMemcpyDeviceToHost));
+    bool custom_wmma_tiled_ok = verify_results(h_A.data(), h_B.data(), h_C.data(), M, N, K, 128, 1e-2f);
+
+    // ----------------------------------------------------
     // 3. cuBLAS HGEMM (FP16 baseline)
     // ----------------------------------------------------
     bool fp16_tested = false;
@@ -417,9 +503,6 @@ void run_benchmark(cublasHandle_t handle, cublasLtHandle_t ltHandle, int N_size)
     CHECK_CUDA(cudaDeviceSynchronize());
 
     bool fp4_tested = false;
-    float ms_cublas_fp4 = 0.0f;
-    double tflops_cublas_fp4 = 0.0f;
-    bool cublas_fp4_ok = false;
 
     cublasLtMatrixLayout_t Adesc_fp4 = nullptr, Bdesc_fp4 = nullptr, Cdesc_fp4 = nullptr, Ddesc_fp4 = nullptr;
     cublasLtMatmulDesc_t opDesc_fp4 = nullptr;
@@ -465,32 +548,168 @@ void run_benchmark(cublasHandle_t handle, cublasLtHandle_t ltHandle, int N_size)
 
         CHECK_CUDA(cudaMalloc(&workspace_fp4, workspaceSize_fp4));
 
-        std::vector<cublasLtMatmulHeuristicResult_t> heuristicResults(1);
+        std::vector<cublasLtMatmulHeuristicResult_t> heuristicResults(50);
         int returnedAlgoCount = 0;
         status = cublasLtMatmulAlgoGetHeuristic(
-            ltHandle, opDesc_fp4, Adesc_fp4, Bdesc_fp4, Cdesc_fp4, Ddesc_fp4, pref_fp4, 1, heuristicResults.data(), &returnedAlgoCount
+            ltHandle, opDesc_fp4, Adesc_fp4, Bdesc_fp4, Cdesc_fp4, Ddesc_fp4, pref_fp4, 50, heuristicResults.data(), &returnedAlgoCount
         );
         if (status != CUBLAS_STATUS_SUCCESS || returnedAlgoCount == 0) break;
 
+        // Map tile IDs to string representations
+        auto get_tile_name = [](int32_t tileId) -> std::string {
+            switch (tileId) {
+                case CUBLASLT_MATMUL_TILE_8x8: return "8x8";
+                case CUBLASLT_MATMUL_TILE_8x16: return "8x16";
+                case CUBLASLT_MATMUL_TILE_16x8: return "16x8";
+                case CUBLASLT_MATMUL_TILE_8x32: return "8x32";
+                case CUBLASLT_MATMUL_TILE_16x16: return "16x16";
+                case CUBLASLT_MATMUL_TILE_32x8: return "32x8";
+                case CUBLASLT_MATMUL_TILE_8x64: return "8x64";
+                case CUBLASLT_MATMUL_TILE_16x32: return "16x32";
+                case CUBLASLT_MATMUL_TILE_32x16: return "32x16";
+                case CUBLASLT_MATMUL_TILE_64x8: return "64x8";
+                case CUBLASLT_MATMUL_TILE_32x32: return "32x32";
+                case CUBLASLT_MATMUL_TILE_32x64: return "32x64";
+                case CUBLASLT_MATMUL_TILE_64x32: return "64x32";
+                case CUBLASLT_MATMUL_TILE_32x128: return "32x128";
+                case CUBLASLT_MATMUL_TILE_64x64: return "64x64";
+                case CUBLASLT_MATMUL_TILE_128x32: return "128x32";
+                case CUBLASLT_MATMUL_TILE_64x128: return "64x128";
+                case CUBLASLT_MATMUL_TILE_128x64: return "128x64";
+                case CUBLASLT_MATMUL_TILE_64x256: return "64x256";
+                case CUBLASLT_MATMUL_TILE_128x128: return "128x128";
+                case CUBLASLT_MATMUL_TILE_256x64: return "256x64";
+                case CUBLASLT_MATMUL_TILE_64x512: return "64x512";
+                case CUBLASLT_MATMUL_TILE_128x256: return "128x256";
+                case CUBLASLT_MATMUL_TILE_256x128: return "256x128";
+                case CUBLASLT_MATMUL_TILE_512x64: return "512x64";
+                default: return "Unknown (" + std::to_string(tileId) + ")";
+            }
+        };
+
+        struct FP4Run {
+            std::string tile_name;
+            float time_ms;
+            double tflops;
+            bool ok;
+        };
+        std::unordered_map<std::string, FP4Run> best_runs;
+
         fp4_tested = true;
-        for (int i = 0; i < warmup_runs; ++i) {
-            cublasLtMatmul(ltHandle, opDesc_fp4, &alpha, d_B_fp4, Adesc_fp4, d_A_fp4, Bdesc_fp4, &beta, d_C, Cdesc_fp4, d_C, Ddesc_fp4, &heuristicResults[0].algo, workspace_fp4, workspaceSize_fp4, nullptr);
+        // 1. Run over all compatible configurations returned by the heuristic search
+        for (int idx = 0; idx < returnedAlgoCount; ++idx) {
+            cublasLtMatmulAlgo_t algo = heuristicResults[idx].algo;
+            int32_t tileId = 0;
+            size_t sizeWritten = 0;
+            status = cublasLtMatmulAlgoConfigGetAttribute(&algo, CUBLASLT_ALGO_CONFIG_TILE_ID, &tileId, sizeof(tileId), &sizeWritten);
+            if (status != CUBLAS_STATUS_SUCCESS) continue;
+            
+            std::string tile_name = get_tile_name(tileId);
+            
+            cublasStatus_t run_status = cublasLtMatmul(
+                ltHandle, opDesc_fp4, &alpha, d_B_fp4, Adesc_fp4, d_A_fp4, Bdesc_fp4, &beta,
+                d_C, Cdesc_fp4, d_C, Ddesc_fp4, &algo, workspace_fp4, workspaceSize_fp4, nullptr
+            );
+            if (run_status != CUBLAS_STATUS_SUCCESS) continue;
+            
+            // Warmup
+            for (int i = 0; i < warmup_runs; ++i) {
+                cublasLtMatmul(ltHandle, opDesc_fp4, &alpha, d_B_fp4, Adesc_fp4, d_A_fp4, Bdesc_fp4, &beta, d_C, Cdesc_fp4, d_C, Ddesc_fp4, &algo, workspace_fp4, workspaceSize_fp4, nullptr);
+            }
+            CHECK_CUDA(cudaDeviceSynchronize());
+            
+            CHECK_CUDA(cudaEventRecord(start));
+            for (int i = 0; i < benchmark_runs; ++i) {
+                cublasLtMatmul(ltHandle, opDesc_fp4, &alpha, d_B_fp4, Adesc_fp4, d_A_fp4, Bdesc_fp4, &beta, d_C, Cdesc_fp4, d_C, Ddesc_fp4, &algo, workspace_fp4, workspaceSize_fp4, nullptr);
+            }
+            CHECK_CUDA(cudaEventRecord(stop));
+            CHECK_CUDA(cudaEventSynchronize(stop));
+            
+            float ms = 0.0f;
+            CHECK_CUDA(cudaEventElapsedTime(&ms, start, stop));
+            float avg_sec = (ms / benchmark_runs) / 1000.0f;
+            double tflops = (gflops_base / avg_sec) / 1e12;
+            
+            CHECK_CUDA(cudaMemcpy(h_C.data(), d_C, size_C, cudaMemcpyDeviceToHost));
+            bool ok = verify_results(h_A.data(), h_B.data(), h_C.data(), M, N, K, 128, 5e-1f);
+            
+            if (best_runs.find(tile_name) == best_runs.end() || tflops > best_runs[tile_name].tflops) {
+                best_runs[tile_name] = {tile_name, ms, tflops, ok};
+            }
         }
-        CHECK_CUDA(cudaDeviceSynchronize());
-
-        CHECK_CUDA(cudaEventRecord(start));
-        for (int i = 0; i < benchmark_runs; ++i) {
-            cublasLtMatmul(ltHandle, opDesc_fp4, &alpha, d_B_fp4, Adesc_fp4, d_A_fp4, Bdesc_fp4, &beta, d_C, Cdesc_fp4, d_C, Ddesc_fp4, &heuristicResults[0].algo, workspace_fp4, workspaceSize_fp4, nullptr);
+        
+        // 2. Try manual configurations on the top algorithm to find others
+        struct TileConfig {
+            const char* name;
+            int32_t tileId;
+        };
+        std::vector<TileConfig> manual_tiles = {
+            {"8x8", CUBLASLT_MATMUL_TILE_8x8},
+            {"16x16", CUBLASLT_MATMUL_TILE_16x16},
+            {"32x32", CUBLASLT_MATMUL_TILE_32x32},
+            {"64x64", CUBLASLT_MATMUL_TILE_64x64},
+            {"128x64", CUBLASLT_MATMUL_TILE_128x64},
+            {"64x128", CUBLASLT_MATMUL_TILE_64x128},
+            {"128x128", CUBLASLT_MATMUL_TILE_128x128},
+            {"256x64", CUBLASLT_MATMUL_TILE_256x64},
+            {"64x256", CUBLASLT_MATMUL_TILE_64x256},
+            {"256x128", CUBLASLT_MATMUL_TILE_256x128},
+            {"128x256", CUBLASLT_MATMUL_TILE_128x256},
+        };
+        
+        if (M == 1024) {
+            std::cout << "\nScanning cuBLASLt FP4 manual tile layout compatibility:\n";
         }
-        CHECK_CUDA(cudaEventRecord(stop));
-        CHECK_CUDA(cudaEventSynchronize(stop));
+        for (const auto& tile : manual_tiles) {
+            std::string tile_name = tile.name;
+            
+            cublasLtMatmulAlgo_t algo = heuristicResults[0].algo;
+            status = cublasLtMatmulAlgoConfigSetAttribute(&algo, CUBLASLT_ALGO_CONFIG_TILE_ID, &tile.tileId, sizeof(tile.tileId));
+            if (status != CUBLAS_STATUS_SUCCESS) {
+                if (M == 1024) std::cout << "  Tile " << tile_name << ": Config Set failed\n";
+                continue;
+            }
+            
+            cublasStatus_t run_status = cublasLtMatmul(
+                ltHandle, opDesc_fp4, &alpha, d_B_fp4, Adesc_fp4, d_A_fp4, Bdesc_fp4, &beta,
+                d_C, Cdesc_fp4, d_C, Ddesc_fp4, &algo, workspace_fp4, workspaceSize_fp4, nullptr
+            );
+            if (run_status != CUBLAS_STATUS_SUCCESS) {
+                if (M == 1024) std::cout << "  Tile " << tile_name << ": Execution failed (Status: " << run_status << ")\n";
+                continue;
+            }
+            
+            if (M == 1024) std::cout << "  Tile " << tile_name << ": SUCCESS!\n";
+            if (best_runs.find(tile_name) != best_runs.end()) continue;
+            
+            // Warmup
+            for (int i = 0; i < warmup_runs; ++i) {
+                cublasLtMatmul(ltHandle, opDesc_fp4, &alpha, d_B_fp4, Adesc_fp4, d_A_fp4, Bdesc_fp4, &beta, d_C, Cdesc_fp4, d_C, Ddesc_fp4, &algo, workspace_fp4, workspaceSize_fp4, nullptr);
+            }
+            CHECK_CUDA(cudaDeviceSynchronize());
+            
+            CHECK_CUDA(cudaEventRecord(start));
+            for (int i = 0; i < benchmark_runs; ++i) {
+                cublasLtMatmul(ltHandle, opDesc_fp4, &alpha, d_B_fp4, Adesc_fp4, d_A_fp4, Bdesc_fp4, &beta, d_C, Cdesc_fp4, d_C, Ddesc_fp4, &algo, workspace_fp4, workspaceSize_fp4, nullptr);
+            }
+            CHECK_CUDA(cudaEventRecord(stop));
+            CHECK_CUDA(cudaEventSynchronize(stop));
+            
+            float ms = 0.0f;
+            CHECK_CUDA(cudaEventElapsedTime(&ms, start, stop));
+            float avg_sec = (ms / benchmark_runs) / 1000.0f;
+            double tflops = (gflops_base / avg_sec) / 1e12;
+            
+            CHECK_CUDA(cudaMemcpy(h_C.data(), d_C, size_C, cudaMemcpyDeviceToHost));
+            bool ok = verify_results(h_A.data(), h_B.data(), h_C.data(), M, N, K, 128, 5e-1f);
+            
+            best_runs[tile_name] = {tile_name, ms, tflops, ok};
+        }
 
-        CHECK_CUDA(cudaEventElapsedTime(&ms_cublas_fp4, start, stop));
-        float avg_sec_cublas_fp4 = (ms_cublas_fp4 / benchmark_runs) / 1000.0f;
-        tflops_cublas_fp4 = (gflops_base / avg_sec_cublas_fp4) / 1e12;
-
-        CHECK_CUDA(cudaMemcpy(h_C.data(), d_C, size_C, cudaMemcpyDeviceToHost));
-        cublas_fp4_ok = verify_results(h_A.data(), h_B.data(), h_C.data(), M, N, K, 128, 5e-1f);
+        // Copy consolidated runs to final array
+        for (const auto& pair : best_runs) {
+            fp4_tile_results.push_back({pair.second.tile_name, pair.second.time_ms, pair.second.tflops, pair.second.ok});
+        }
     } while (0);
 
     if (workspace_fp4) cudaFree(workspace_fp4);
@@ -518,6 +737,11 @@ void run_benchmark(cublasHandle_t handle, cublasLtHandle_t ltHandle, int N_size)
               << std::setw(18) << tflops_custom_wmma
               << std::setw(12) << (custom_wmma_ok ? "PASS" : "FAIL") << "\n";
 
+    std::cout << std::setw(30) << "Custom WMMA V2 (FP16, 32x32)"
+              << std::setw(15) << (ms_custom_wmma_tiled / benchmark_runs)
+              << std::setw(18) << tflops_custom_wmma_tiled
+              << std::setw(12) << (custom_wmma_tiled_ok ? "PASS" : "FAIL") << "\n";
+
     if (fp16_tested) {
         std::cout << std::setw(30) << "cuBLAS HGEMM (FP16)"
                   << std::setw(15) << (ms_cublas_fp16 / benchmark_runs)
@@ -533,10 +757,12 @@ void run_benchmark(cublasHandle_t handle, cublasLtHandle_t ltHandle, int N_size)
     }
 
     if (fp4_tested) {
-        std::cout << std::setw(30) << "cuBLASLt GEMM (FP4/NVFP4)"
-                  << std::setw(15) << (ms_cublas_fp4 / benchmark_runs)
-                  << std::setw(18) << tflops_cublas_fp4
-                  << std::setw(12) << (cublas_fp4_ok ? "PASS" : "FAIL") << "\n";
+        for (const auto& res : fp4_tile_results) {
+            std::cout << std::setw(30) << ("cuBLASLt FP4 (Tile " + res.name + ")")
+                      << std::setw(15) << std::fixed << std::setprecision(3) << (res.time_ms / benchmark_runs)
+                      << std::setw(18) << std::setprecision(4) << res.tflops
+                      << std::setw(12) << (res.ok ? "PASS" : "FAIL") << "\n";
+        }
     }
 
     // Clean up device memory
