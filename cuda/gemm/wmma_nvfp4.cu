@@ -89,10 +89,10 @@ __global__ void floatToFp4TransposedKernel(const float* src, __nv_fp4_storage_t*
     }
 }
 
-__global__ void fillScalesKernel(__nv_fp8_storage_t* scales, int size) {
+__global__ void fillScalesKernel(__nv_fp8_storage_t* scales, int size, float val) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < size) {
-        scales[idx] = __nv_cvt_float_to_fp8(1.0f, __NV_NOSAT, __NV_E4M3);
+        scales[idx] = __nv_cvt_float_to_fp8(val, __NV_NOSAT, __NV_E4M3);
     }
 }
 
@@ -181,6 +181,46 @@ __global__ void gemm_wmma_fp16_tiled_32x32(
     wmma::store_matrix_sync(C + (row + 16) * N + col + 16, c_frag[1][1], N, wmma::mem_row_major);
 }
 
+// Convert FP4 back to float on host for verification
+void fp4ToFloat(const __nv_fp4_storage_t* src, float* dst, size_t size, float scale_D) {
+    for (size_t i = 0; i < size / 2; ++i) {
+        uint8_t byte = src[i];
+        __nv_fp4_storage_t raw1 = byte & 0x0F;
+        __nv_fp4_storage_t raw2 = (byte >> 4) & 0x0F;
+        __half_raw h1 = __nv_cvt_fp4_to_halfraw(raw1, __NV_E2M1);
+        __half_raw h2 = __nv_cvt_fp4_to_halfraw(raw2, __NV_E2M1);
+        half h1_val = *reinterpret_cast<half*>(&h1);
+        half h2_val = *reinterpret_cast<half*>(&h2);
+        dst[2 * i] = __half2float(h1_val) * scale_D;
+        dst[2 * i + 1] = __half2float(h2_val) * scale_D;
+    }
+}
+
+// Host-based FP4 writeback verification (handling quantization steps)
+bool verify_fp4_writeback(const float* A, const float* B, const float* C_reconstructed, int M, int N, int K, int check_size) {
+    int limit_M = std::min(M, check_size);
+    int limit_N = std::min(N, check_size);
+
+    for (int r = 0; r < limit_M; ++r) {
+        for (int c = 0; c < limit_N; ++c) {
+            double expected = 0.0;
+            for (int k = 0; k < K; ++k) {
+                expected += (double)A[r * K + k] * (double)B[k * N + c];
+            }
+            float actual = C_reconstructed[r * N + c];
+            double diff = std::abs(expected - actual);
+            double max_allowed_error = (double)K / 8.0;
+            if (diff > max_allowed_error) {
+                std::cerr << "FP4 Writeback verification failed at (" << r << ", " << c
+                          << "): expected " << expected << ", got " << actual
+                          << ", diff = " << diff << ", max_allowed_error = " << max_allowed_error << std::endl;
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 // Host-based sub-matrix verification
 bool verify_results(const float* A, const float* B, const float* C, int M, int N, int K, int check_size, float rel_tolerance = 1e-4f) {
     int limit_M = std::min(M, check_size);
@@ -239,10 +279,10 @@ void run_benchmark(cublasHandle_t handle, cublasLtHandle_t ltHandle, int N_size)
 
     // Device pointers
     float *d_A = nullptr, *d_B = nullptr, *d_C = nullptr;
-    __half *d_A_half = nullptr, *d_B_half = nullptr;
+    __half *d_A_half = nullptr, *d_B_half = nullptr, *d_C_half = nullptr;
     __nv_fp8_storage_t *d_A_fp8 = nullptr, *d_B_fp8 = nullptr;
-    __nv_fp4_storage_t *d_A_fp4 = nullptr, *d_B_fp4 = nullptr;
-    __nv_fp8_storage_t *d_scale_A = nullptr, *d_scale_B = nullptr;
+    __nv_fp4_storage_t *d_A_fp4 = nullptr, *d_B_fp4 = nullptr, *d_D_fp4 = nullptr;
+    __nv_fp8_storage_t *d_scale_A = nullptr, *d_scale_B = nullptr, *d_scale_D = nullptr;
 
     CHECK_CUDA(cudaMalloc(&d_A, size_A));
     CHECK_CUDA(cudaMalloc(&d_B, size_B));
@@ -275,6 +315,14 @@ void run_benchmark(cublasHandle_t handle, cublasLtHandle_t ltHandle, int N_size)
     int scale_B_size = N * (K / 16);
     CHECK_CUDA(cudaMalloc(&d_scale_A, scale_A_size));
     CHECK_CUDA(cudaMalloc(&d_scale_B, scale_B_size));
+
+    size_t size_C_half = (size_t)M * N * sizeof(__half);
+    size_t size_D_fp4 = ((size_t)M * N) / 2 * sizeof(__nv_fp4_storage_t);
+    int scale_D_size = M * (N / 16);
+    CHECK_CUDA(cudaMalloc(&d_C_half, size_C_half));
+    CHECK_CUDA(cudaMalloc(&d_D_fp4, size_D_fp4));
+    CHECK_CUDA(cudaMalloc(&d_scale_D, scale_D_size));
+    CHECK_CUDA(cudaMemset(d_C_half, 0, size_C_half));
 
     // Convert inputs on device
     int threads_convert = 256;
@@ -498,8 +546,9 @@ void run_benchmark(cublasHandle_t handle, cublasLtHandle_t ltHandle, int N_size)
     floatToFp4Kernel<<<blocks_convert_A_fp4, threads_convert>>>(d_A, d_A_fp4, M * K);
     dim3 gridDimTransFp4((N + 15) / 16, (K / 2 + 15) / 16);
     floatToFp4TransposedKernel<<<gridDimTransFp4, blockDimTrans>>>(d_B, d_B_fp4, K, N);
-    fillScalesKernel<<< (scale_A_size + threads_convert - 1) / threads_convert, threads_convert>>>(d_scale_A, scale_A_size);
-    fillScalesKernel<<< (scale_B_size + threads_convert - 1) / threads_convert, threads_convert>>>(d_scale_B, scale_B_size);
+    fillScalesKernel<<< (scale_A_size + threads_convert - 1) / threads_convert, threads_convert>>>(d_scale_A, scale_A_size, 1.0f);
+    fillScalesKernel<<< (scale_B_size + threads_convert - 1) / threads_convert, threads_convert>>>(d_scale_B, scale_B_size, 1.0f);
+    fillScalesKernel<<< (scale_D_size + threads_convert - 1) / threads_convert, threads_convert>>>(d_scale_D, scale_D_size, 1.0f);
     CHECK_CUDA(cudaDeviceSynchronize());
 
     bool fp4_tested = false;
@@ -720,6 +769,124 @@ void run_benchmark(cublasHandle_t handle, cublasLtHandle_t ltHandle, int N_size)
     if (Cdesc_fp4) cublasLtMatrixLayoutDestroy(Cdesc_fp4);
     if (Ddesc_fp4) cublasLtMatrixLayoutDestroy(Ddesc_fp4);
 
+    // ----------------------------------------------------
+    // 6. cuBLASLt FP4 Tensor Core GEMM (FP4 Writeback)
+    // ----------------------------------------------------
+    bool fp4_wb_tested = false;
+    float ms_cublas_fp4_wb = 0.0f;
+    double tflops_cublas_fp4_wb = 0.0f;
+    bool cublas_fp4_wb_ok = false;
+
+    cublasLtMatrixLayout_t Adesc_fp4_wb = nullptr, Bdesc_fp4_wb = nullptr, Cdesc_fp4_wb = nullptr, Ddesc_fp4_wb = nullptr;
+    cublasLtMatmulDesc_t opDesc_fp4_wb = nullptr;
+    cublasLtMatmulPreference_t pref_fp4_wb = nullptr;
+    void* workspace_fp4_wb = nullptr;
+    uint64_t workspaceSize_fp4_wb = 4 * 1024 * 1024;
+
+    do {
+        cublasStatus_t status;
+        status = cublasLtMatrixLayoutCreate(&Adesc_fp4_wb, CUDA_R_4F_E2M1, K, N, K);
+        if (status != CUBLAS_STATUS_SUCCESS) break;
+        status = cublasLtMatrixLayoutCreate(&Bdesc_fp4_wb, CUDA_R_4F_E2M1, K, M, K);
+        if (status != CUBLAS_STATUS_SUCCESS) break;
+        status = cublasLtMatrixLayoutCreate(&Cdesc_fp4_wb, CUDA_R_16F, N, M, N);
+        if (status != CUBLAS_STATUS_SUCCESS) break;
+        status = cublasLtMatrixLayoutCreate(&Ddesc_fp4_wb, CUDA_R_4F_E2M1, N, M, N);
+        if (status != CUBLAS_STATUS_SUCCESS) break;
+
+        status = cublasLtMatmulDescCreate(&opDesc_fp4_wb, CUBLAS_COMPUTE_32F, CUDA_R_32F);
+        if (status != CUBLAS_STATUS_SUCCESS) break;
+
+        cublasOperation_t transA = CUBLAS_OP_T;
+        cublasOperation_t transB = CUBLAS_OP_N;
+        status = cublasLtMatmulDescSetAttribute(opDesc_fp4_wb, CUBLASLT_MATMUL_DESC_TRANSA, &transA, sizeof(transA));
+        if (status != CUBLAS_STATUS_SUCCESS) break;
+        status = cublasLtMatmulDescSetAttribute(opDesc_fp4_wb, CUBLASLT_MATMUL_DESC_TRANSB, &transB, sizeof(transB));
+        if (status != CUBLAS_STATUS_SUCCESS) break;
+
+        int32_t scale_mode = CUBLASLT_MATMUL_MATRIX_SCALE_VEC16_UE4M3;
+        status = cublasLtMatmulDescSetAttribute(opDesc_fp4_wb, CUBLASLT_MATMUL_DESC_A_SCALE_MODE, &scale_mode, sizeof(scale_mode));
+        if (status != CUBLAS_STATUS_SUCCESS) break;
+        status = cublasLtMatmulDescSetAttribute(opDesc_fp4_wb, CUBLASLT_MATMUL_DESC_B_SCALE_MODE, &scale_mode, sizeof(scale_mode));
+        if (status != CUBLAS_STATUS_SUCCESS) break;
+        status = cublasLtMatmulDescSetAttribute(opDesc_fp4_wb, CUBLASLT_MATMUL_DESC_A_SCALE_POINTER, &d_scale_A, sizeof(d_scale_A));
+        if (status != CUBLAS_STATUS_SUCCESS) break;
+        status = cublasLtMatmulDescSetAttribute(opDesc_fp4_wb, CUBLASLT_MATMUL_DESC_B_SCALE_POINTER, &d_scale_B, sizeof(d_scale_B));
+        if (status != CUBLAS_STATUS_SUCCESS) break;
+
+        // Set D output scale mode and pointer
+        status = cublasLtMatmulDescSetAttribute(opDesc_fp4_wb, CUBLASLT_MATMUL_DESC_D_OUT_SCALE_MODE, &scale_mode, sizeof(scale_mode));
+        if (status != CUBLAS_STATUS_SUCCESS) break;
+        status = cublasLtMatmulDescSetAttribute(opDesc_fp4_wb, CUBLASLT_MATMUL_DESC_D_OUT_SCALE_POINTER, &d_scale_D, sizeof(d_scale_D));
+        if (status != CUBLAS_STATUS_SUCCESS) break;
+
+        status = cublasLtMatmulPreferenceCreate(&pref_fp4_wb);
+        if (status != CUBLAS_STATUS_SUCCESS) break;
+        status = cublasLtMatmulPreferenceSetAttribute(pref_fp4_wb, CUBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES, &workspaceSize_fp4_wb, sizeof(workspaceSize_fp4_wb));
+        if (status != CUBLAS_STATUS_SUCCESS) break;
+
+        CHECK_CUDA(cudaMalloc(&workspace_fp4_wb, workspaceSize_fp4_wb));
+
+        float scale_D_val = (float)K / 20.0f;
+        fillScalesKernel<<< (scale_D_size + threads_convert - 1) / threads_convert, threads_convert>>>(d_scale_D, scale_D_size, scale_D_val);
+        CHECK_CUDA(cudaDeviceSynchronize());
+
+        std::vector<cublasLtMatmulHeuristicResult_t> heuristicResults(1);
+        int returnedAlgoCount = 0;
+        status = cublasLtMatmulAlgoGetHeuristic(
+            ltHandle, opDesc_fp4_wb, Adesc_fp4_wb, Bdesc_fp4_wb, Cdesc_fp4_wb, Ddesc_fp4_wb, pref_fp4_wb, 1, heuristicResults.data(), &returnedAlgoCount
+        );
+        if (status != CUBLAS_STATUS_SUCCESS || returnedAlgoCount == 0) break;
+
+        // Try setting tile ID 128x128 explicitly (since we know it is the only supported one)
+        int32_t tileId = CUBLASLT_MATMUL_TILE_128x128;
+        cublasLtMatmulAlgo_t algo = heuristicResults[0].algo;
+        status = cublasLtMatmulAlgoConfigSetAttribute(&algo, CUBLASLT_ALGO_CONFIG_TILE_ID, &tileId, sizeof(tileId));
+        if (status == CUBLAS_STATUS_SUCCESS) {
+            // Verify execution compatibility
+            cublasStatus_t run_status = cublasLtMatmul(
+                ltHandle, opDesc_fp4_wb, &alpha, d_B_fp4, Adesc_fp4_wb, d_A_fp4, Bdesc_fp4_wb, &beta,
+                d_C_half, Cdesc_fp4_wb, d_D_fp4, Ddesc_fp4_wb, &algo, workspace_fp4_wb, workspaceSize_fp4_wb, nullptr
+            );
+            if (run_status == CUBLAS_STATUS_SUCCESS) {
+                fp4_wb_tested = true;
+                
+                // Warmup
+                for (int i = 0; i < warmup_runs; ++i) {
+                    cublasLtMatmul(ltHandle, opDesc_fp4_wb, &alpha, d_B_fp4, Adesc_fp4_wb, d_A_fp4, Bdesc_fp4_wb, &beta, d_C_half, Cdesc_fp4_wb, d_D_fp4, Ddesc_fp4_wb, &algo, workspace_fp4_wb, workspaceSize_fp4_wb, nullptr);
+                }
+                CHECK_CUDA(cudaDeviceSynchronize());
+
+                CHECK_CUDA(cudaEventRecord(start));
+                for (int i = 0; i < benchmark_runs; ++i) {
+                    cublasLtMatmul(ltHandle, opDesc_fp4_wb, &alpha, d_B_fp4, Adesc_fp4_wb, d_A_fp4, Bdesc_fp4_wb, &beta, d_C_half, Cdesc_fp4_wb, d_D_fp4, Ddesc_fp4_wb, &algo, workspace_fp4_wb, workspaceSize_fp4_wb, nullptr);
+                }
+                CHECK_CUDA(cudaEventRecord(stop));
+                CHECK_CUDA(cudaEventSynchronize(stop));
+
+                CHECK_CUDA(cudaEventElapsedTime(&ms_cublas_fp4_wb, start, stop));
+                float avg_sec = (ms_cublas_fp4_wb / benchmark_runs) / 1000.0f;
+                tflops_cublas_fp4_wb = (gflops_base / avg_sec) / 1e12;
+
+                // Verification
+                std::vector<__nv_fp4_storage_t> h_D_fp4(M * N / 2);
+                CHECK_CUDA(cudaMemcpy(h_D_fp4.data(), d_D_fp4, M * N / 2, cudaMemcpyDeviceToHost));
+                std::vector<float> h_D_float(M * N);
+                fp4ToFloat(h_D_fp4.data(), h_D_float.data(), M * N, scale_D_val);
+
+                cublas_fp4_wb_ok = verify_fp4_writeback(h_A.data(), h_B.data(), h_D_float.data(), M, N, K, 128);
+            }
+        }
+    } while (0);
+
+    if (workspace_fp4_wb) cudaFree(workspace_fp4_wb);
+    if (pref_fp4_wb) cublasLtMatmulPreferenceDestroy(pref_fp4_wb);
+    if (opDesc_fp4_wb) cublasLtMatmulDescDestroy(opDesc_fp4_wb);
+    if (Adesc_fp4_wb) cublasLtMatrixLayoutDestroy(Adesc_fp4_wb);
+    if (Bdesc_fp4_wb) cublasLtMatrixLayoutDestroy(Bdesc_fp4_wb);
+    if (Cdesc_fp4_wb) cublasLtMatrixLayoutDestroy(Cdesc_fp4_wb);
+    if (Ddesc_fp4_wb) cublasLtMatrixLayoutDestroy(Ddesc_fp4_wb);
+
     // Print Results Table
     std::cout << std::left << std::setw(30) << "Implementation"
               << std::setw(15) << "Time (ms)"
@@ -765,18 +932,28 @@ void run_benchmark(cublasHandle_t handle, cublasLtHandle_t ltHandle, int N_size)
         }
     }
 
+    if (fp4_wb_tested) {
+        std::cout << std::setw(30) << "cuBLASLt FP4 (FP4 Writeback)"
+                  << std::setw(15) << std::fixed << std::setprecision(3) << (ms_cublas_fp4_wb / benchmark_runs)
+                  << std::setw(18) << std::setprecision(4) << tflops_cublas_fp4_wb
+                  << std::setw(12) << (cublas_fp4_wb_ok ? "PASS" : "FAIL") << "\n";
+    }
+
     // Clean up device memory
     CHECK_CUDA(cudaFree(d_A));
     CHECK_CUDA(cudaFree(d_B));
     CHECK_CUDA(cudaFree(d_C));
     CHECK_CUDA(cudaFree(d_A_half));
     CHECK_CUDA(cudaFree(d_B_half));
+    CHECK_CUDA(cudaFree(d_C_half));
     CHECK_CUDA(cudaFree(d_A_fp8));
     CHECK_CUDA(cudaFree(d_B_fp8));
     CHECK_CUDA(cudaFree(d_A_fp4));
     CHECK_CUDA(cudaFree(d_B_fp4));
+    CHECK_CUDA(cudaFree(d_D_fp4));
     CHECK_CUDA(cudaFree(d_scale_A));
     CHECK_CUDA(cudaFree(d_scale_B));
+    CHECK_CUDA(cudaFree(d_scale_D));
     CHECK_CUDA(cudaEventDestroy(start));
     CHECK_CUDA(cudaEventDestroy(stop));
 }
