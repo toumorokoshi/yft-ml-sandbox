@@ -20,7 +20,7 @@ genrule(
     name = "wmma_nvfp4_benchmark_bin",
     srcs = ["wmma_nvfp4.cu"],
     outs = ["wmma_nvfp4_benchmark"],
-    cmd = "LD_LIBRARY_PATH=/usr/local/cuda/lib64:$${LD_LIBRARY_PATH:-} nvcc -O3 -use_fast_math -gencode arch=compute_121,code=sm_121 -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lcublas -lcublasLt -lcudart $(SRCS) -o $(OUTS)",
+    cmd = "LD_LIBRARY_PATH=/usr/local/cuda/lib64:$${LD_LIBRARY_PATH:-} nvcc -O3 -use_fast_math -gencode arch=compute_121a,code=sm_121a -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lcublas -lcublasLt -lcudart $(SRCS) -o $(OUTS)",
     executable = True,
     local = 1,
     tags = ["no-sandbox"],
@@ -33,3 +33,22 @@ sh_test(
     data = [":wmma_nvfp4_benchmark_bin"],
     tags = ["no-sandbox"],
 )
+
+genrule(
+    name = "peak_mma_bin",
+    srcs = ["peak_mma.cu"],
+    outs = ["peak_mma"],
+    cmd = "LD_LIBRARY_PATH=/usr/local/cuda/lib64:$${LD_LIBRARY_PATH:-} nvcc -O3 -gencode arch=compute_121a,code=sm_121a -I/usr/local/cuda/include -L/usr/local/cuda/lib64 -lcudart $(SRCS) -o $(OUTS)",
+    executable = True,
+    local = 1,
+    tags = ["no-sandbox"],
+    visibility = ["//visibility:public"],
+)
+
+sh_test(
+    name = "peak_mma_test",
+    srcs = ["run_peak_mma.sh"],
+    data = [":peak_mma_bin"],
+    tags = ["no-sandbox"],
+)
+

@@ -101,32 +101,32 @@ __global__ void fillScalesKernel(__nv_fp8_storage_t* scales, int size, float val
 __global__ void gemm_wmma_fp16(
     const __half* A, const __half* B, float* C,
     int M, int N, int K) {
-    
+
     // Each block contains blockDim.x = 32 threads (one warp in X) and blockDim.y warps.
     // threadIdx.y identifies the warp index within the block.
     int warpRow = blockIdx.y * blockDim.y + threadIdx.y;
     int warpCol = blockIdx.x;
-    
+
     int row = warpRow * 16;
     int col = warpCol * 16;
-    
+
     if (row >= M || col >= N) return;
-    
+
     // Declare the fragments
     wmma::fragment<wmma::matrix_a, 16, 16, 16, __half, wmma::row_major> a_frag;
     wmma::fragment<wmma::matrix_b, 16, 16, 16, __half, wmma::row_major> b_frag;
     wmma::fragment<wmma::accumulator, 16, 16, 16, float> c_frag;
-    
+
     // Initialize the accumulator fragment
     wmma::fill_fragment(c_frag, 0.0f);
-    
+
     // Loop over the inner K dimension
     for (int k = 0; k < K; k += 16) {
         wmma::load_matrix_sync(a_frag, A + row * K + k, K);
         wmma::load_matrix_sync(b_frag, B + k * N + col, N);
         wmma::mma_sync(c_frag, a_frag, b_frag, c_frag);
     }
-    
+
     // Store the output back to global memory
     wmma::store_matrix_sync(C + row * N + col, c_frag, N, wmma::mem_row_major);
 }
@@ -136,44 +136,44 @@ __global__ void gemm_wmma_fp16(
 __global__ void gemm_wmma_fp16_tiled_32x32(
     const __half* A, const __half* B, float* C,
     int M, int N, int K) {
-    
+
     // Each block contains blockDim.x = 32 (1 warp) and blockDim.y = 4 (4 warps total)
     // We arrange the 4 warps as a 2x2 grid inside the 64x64 block tile.
     int warpId = threadIdx.y;
     int warpRow = warpId / 2; // 0 or 1
     int warpCol = warpId % 2; // 0 or 1
-    
+
     int row = (blockIdx.y * 2 + warpRow) * 32;
     int col = (blockIdx.x * 2 + warpCol) * 32;
-    
+
     if (row >= M || col >= N) return;
-    
+
     // Declare 4 accumulator fragments for the 32x32 output tile
     wmma::fragment<wmma::accumulator, 16, 16, 16, float> c_frag[2][2];
     wmma::fill_fragment(c_frag[0][0], 0.0f);
     wmma::fill_fragment(c_frag[0][1], 0.0f);
     wmma::fill_fragment(c_frag[1][0], 0.0f);
     wmma::fill_fragment(c_frag[1][1], 0.0f);
-    
+
     // Loop over the K dimension in steps of 16
     for (int k = 0; k < K; k += 16) {
         // Load two A fragments along the rows (row and row + 16)
         wmma::fragment<wmma::matrix_a, 16, 16, 16, __half, wmma::row_major> a_frag[2];
         wmma::load_matrix_sync(a_frag[0], A + row * K + k, K);
         wmma::load_matrix_sync(a_frag[1], A + (row + 16) * K + k, K);
-        
+
         // Load two B fragments along the columns (col and col + 16)
         wmma::fragment<wmma::matrix_b, 16, 16, 16, __half, wmma::row_major> b_frag[2];
         wmma::load_matrix_sync(b_frag[0], B + k * N + col, N);
         wmma::load_matrix_sync(b_frag[1], B + k * N + col + 16, N);
-        
+
         // Perform 4 matrix multiplications (2x2 MMA tiling)
         wmma::mma_sync(c_frag[0][0], a_frag[0], b_frag[0], c_frag[0][0]);
         wmma::mma_sync(c_frag[0][1], a_frag[0], b_frag[1], c_frag[0][1]);
         wmma::mma_sync(c_frag[1][0], a_frag[1], b_frag[0], c_frag[1][0]);
         wmma::mma_sync(c_frag[1][1], a_frag[1], b_frag[1], c_frag[1][1]);
     }
-    
+
     // Store the 4 accumulator fragments back to global memory
     wmma::store_matrix_sync(C + row * N + col, c_frag[0][0], N, wmma::mem_row_major);
     wmma::store_matrix_sync(C + row * N + col + 16, c_frag[0][1], N, wmma::mem_row_major);
@@ -831,41 +831,41 @@ void run_benchmark(cublasHandle_t handle, cublasLtHandle_t ltHandle, int N_size)
             size_t sizeWritten = 0;
             status = cublasLtMatmulAlgoConfigGetAttribute(&algo, CUBLASLT_ALGO_CONFIG_TILE_ID, &tileId, sizeof(tileId), &sizeWritten);
             if (status != CUBLAS_STATUS_SUCCESS) continue;
-            
+
             std::string tile_name = get_tile_name(tileId);
-            
+
             cublasStatus_t run_status = cublasLtMatmul(
                 ltHandle, opDesc_fp4, &alpha, d_B_fp4, Adesc_fp4, d_A_fp4, Bdesc_fp4, &beta,
                 d_C, Cdesc_fp4, d_C, Ddesc_fp4, &algo, workspace_fp4, workspaceSize_fp4, nullptr
             );
             if (run_status != CUBLAS_STATUS_SUCCESS) continue;
-            
+
             // Warmup
             for (int i = 0; i < warmup_runs; ++i) {
                 cublasLtMatmul(ltHandle, opDesc_fp4, &alpha, d_B_fp4, Adesc_fp4, d_A_fp4, Bdesc_fp4, &beta, d_C, Cdesc_fp4, d_C, Ddesc_fp4, &algo, workspace_fp4, workspaceSize_fp4, nullptr);
             }
             CHECK_CUDA(cudaDeviceSynchronize());
-            
+
             CHECK_CUDA(cudaEventRecord(start));
             for (int i = 0; i < benchmark_runs; ++i) {
                 cublasLtMatmul(ltHandle, opDesc_fp4, &alpha, d_B_fp4, Adesc_fp4, d_A_fp4, Bdesc_fp4, &beta, d_C, Cdesc_fp4, d_C, Ddesc_fp4, &algo, workspace_fp4, workspaceSize_fp4, nullptr);
             }
             CHECK_CUDA(cudaEventRecord(stop));
             CHECK_CUDA(cudaEventSynchronize(stop));
-            
+
             float ms = 0.0f;
             CHECK_CUDA(cudaEventElapsedTime(&ms, start, stop));
             float avg_sec = (ms / benchmark_runs) / 1000.0f;
             double tflops = (gflops_base / avg_sec) / 1e12;
-            
+
             CHECK_CUDA(cudaMemcpy(h_C.data(), d_C, size_C, cudaMemcpyDeviceToHost));
             bool ok = verify_results(h_A.data(), h_B.data(), h_C.data(), M, N, K, 128, 5e-1f);
-            
+
             if (best_runs.find(tile_name) == best_runs.end() || tflops > best_runs[tile_name].tflops) {
                 best_runs[tile_name] = {tile_name, ms, tflops, ok};
             }
         }
-        
+
         // 2. Try manual configurations on the top algorithm to find others
         struct TileConfig {
             const char* name;
@@ -884,20 +884,20 @@ void run_benchmark(cublasHandle_t handle, cublasLtHandle_t ltHandle, int N_size)
             {"256x128", CUBLASLT_MATMUL_TILE_256x128},
             {"128x256", CUBLASLT_MATMUL_TILE_128x256},
         };
-        
+
         if (M == 1024) {
             std::cout << "\nScanning cuBLASLt FP4 manual tile layout compatibility:\n";
         }
         for (const auto& tile : manual_tiles) {
             std::string tile_name = tile.name;
-            
+
             cublasLtMatmulAlgo_t algo = heuristicResults[0].algo;
             status = cublasLtMatmulAlgoConfigSetAttribute(&algo, CUBLASLT_ALGO_CONFIG_TILE_ID, &tile.tileId, sizeof(tile.tileId));
             if (status != CUBLAS_STATUS_SUCCESS) {
                 if (M == 1024) std::cout << "  Tile " << tile_name << ": Config Set failed\n";
                 continue;
             }
-            
+
             cublasStatus_t run_status = cublasLtMatmul(
                 ltHandle, opDesc_fp4, &alpha, d_B_fp4, Adesc_fp4, d_A_fp4, Bdesc_fp4, &beta,
                 d_C, Cdesc_fp4, d_C, Ddesc_fp4, &algo, workspace_fp4, workspaceSize_fp4, nullptr
@@ -906,31 +906,31 @@ void run_benchmark(cublasHandle_t handle, cublasLtHandle_t ltHandle, int N_size)
                 if (M == 1024) std::cout << "  Tile " << tile_name << ": Execution failed (Status: " << run_status << ")\n";
                 continue;
             }
-            
+
             if (M == 1024) std::cout << "  Tile " << tile_name << ": SUCCESS!\n";
             if (best_runs.find(tile_name) != best_runs.end()) continue;
-            
+
             // Warmup
             for (int i = 0; i < warmup_runs; ++i) {
                 cublasLtMatmul(ltHandle, opDesc_fp4, &alpha, d_B_fp4, Adesc_fp4, d_A_fp4, Bdesc_fp4, &beta, d_C, Cdesc_fp4, d_C, Ddesc_fp4, &algo, workspace_fp4, workspaceSize_fp4, nullptr);
             }
             CHECK_CUDA(cudaDeviceSynchronize());
-            
+
             CHECK_CUDA(cudaEventRecord(start));
             for (int i = 0; i < benchmark_runs; ++i) {
                 cublasLtMatmul(ltHandle, opDesc_fp4, &alpha, d_B_fp4, Adesc_fp4, d_A_fp4, Bdesc_fp4, &beta, d_C, Cdesc_fp4, d_C, Ddesc_fp4, &algo, workspace_fp4, workspaceSize_fp4, nullptr);
             }
             CHECK_CUDA(cudaEventRecord(stop));
             CHECK_CUDA(cudaEventSynchronize(stop));
-            
+
             float ms = 0.0f;
             CHECK_CUDA(cudaEventElapsedTime(&ms, start, stop));
             float avg_sec = (ms / benchmark_runs) / 1000.0f;
             double tflops = (gflops_base / avg_sec) / 1e12;
-            
+
             CHECK_CUDA(cudaMemcpy(h_C.data(), d_C, size_C, cudaMemcpyDeviceToHost));
             bool ok = verify_results(h_A.data(), h_B.data(), h_C.data(), M, N, K, 128, 5e-1f);
-            
+
             best_runs[tile_name] = {tile_name, ms, tflops, ok};
         }
 
