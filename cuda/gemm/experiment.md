@@ -60,14 +60,12 @@ To isolate memory-bound and API-level execution overheads from the GPU's mathema
 
 ### Key Microbenchmark Results:
 * **Byte-padded (mxf8f6f4) Dense**: **235.6 TFLOPS** (47.1% of the 500 TFLOPS spec)
-* **Byte-padded (mxf8f6f4) Sparse (2:4)**: **471.1 TFLOPS** (47.1% of the 1000 TFLOPS spec)
 * **Native Packed (mxf4nvf4) Dense**: **471.5 TFLOPS** (94.3% of the 500 TFLOPS dense spec)
-* **Native Packed (mxf4nvf4) Sparse (2:4)**: **942.5 TFLOPS** (94.3% of the 1 PFLOP sparse spec)
 
 ### Implications:
 - The **471.5 TFLOPS** dense throughput successfully reaches **99.2%** of the GPU's true theoretical peak limit of **475.4 TFLOPS** at the active 2418 MHz core clock.
 - The experiment confirms that the GB10 GPU's physical silicon is indeed capable of hitting near-ideal peak compute limits when memory overhead is completely avoided.
-- Bypassing the byte-padded `mxf8f6f4` format and executing the native packed `mxf4nvf4` format unlocks a **2.00x** speedup, and enabling 2:4 sparsity yields another **2.00x** speedup, creating a combined **4.00x** performance ladder.
+- Bypassing the byte-padded `mxf8f6f4` format and executing the native packed `mxf4nvf4` format unlocks a **2.00x** speedup.
 
 ---
 
@@ -90,7 +88,6 @@ Since FP4 has a narrow dynamic range (max representable value in `E2M1` is `6.0f
 | Benchmark Mode | Instruction Reduction Dimension | Achieved Peak | % of Spec |
 | :--- | :--- | :--- | :--- |
 | **mxf8f6f4 (Padded) Dense** | m16n8k32 | 235.6 TFLOPS | 47.1% |
-| **mxf8f6f4 (Padded) Sparse (2:4)** | m16n8k64 | 471.1 TFLOPS | 47.1% |
-| **mxf4nvf4 (Packed) Dense** | m16n8k64 | 471.5 TFLOPS | 94.3% |
-| **mxf4nvf4 (Packed) Sparse (2:4)** | m16n8k128 | **942.5 TFLOPS** | **94.3%** |
+| **mxf4nvf4 (Packed) Dense** | m16n8k64 | **471.5 TFLOPS** | **94.3%** |
+
 

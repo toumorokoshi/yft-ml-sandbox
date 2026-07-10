@@ -86,12 +86,11 @@ Scanning cuBLASLt FP4 manual tile layout compatibility:
 
 ### Blackwell NVFP4 Register-Resident Peak (Direct PTX)
 
-To measure the absolute limits of the GPU hardware and verify the 500 TFLOPS dense / 1 PFLOP sparse specs, the `peak_mma` benchmark executes raw inline PTX `mma.sync` and `mma.sp` instructions directly from register fragments (avoiding all memory latency and cache contention overheads).
+To measure the absolute limits of the GPU hardware and verify the 500 TFLOPS dense specs, the `peak_mma` benchmark executes raw inline PTX `mma.sync` instructions directly from register fragments (avoiding all memory latency and cache contention overheads).
 
 | Mode | Reduction Tile | Achieved Peak | % of Spec |
 | :--- | :--- | :--- | :--- |
 | **mxf8f6f4 dense** | m16n8k32 | 235.6 TFLOPS | 47.1% |
-| **mxf8f6f4 sparse (2:4)** | m16n8k64 | 471.1 TFLOPS | 47.1% |
-| **mxf4nvf4 dense** | m16n8k64 | 471.5 TFLOPS | **94.3%** |
-| **mxf4nvf4 sparse (2:4)** | m16n8k128 | **942.5 TFLOPS** | **94.3%** |
+| **mxf4nvf4 dense** | m16n8k64 | **471.5 TFLOPS** | **94.3%** |
+
 
