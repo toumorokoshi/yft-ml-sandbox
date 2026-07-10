@@ -45,14 +45,13 @@ We implemented a loop to iteratively sweep and verify multiple performance optim
 ---
 
 ## 5. Physical Ceiling: Hardware Power Throttling Analysis
-Telemetry analysis via `nvidia-smi -q -d PERFORMANCE` shows that under heavy dense Tensor Core loads, the GB10 GPU's performance state transitions to `P0`, but triggers **Software Power Capping** (`SW Power Cap: Active`). 
+Telemetry analysis via `nvidia-smi -q -d PERFORMANCE` shows that under heavy dense Tensor Core loads, the GB10 GPU's performance state transitions to `P0`, and triggers **Software Power Capping** (`SW Power Cap: Active`).
 
-Due to the power limit of this desktop-class chip, the driver throttles the core clock frequency from the peak application speed of 2418 MHz down to an average of **~1900 MHz** during execution.
+However, active telemetry queries during sustained execution show that the graphics/SM clocks remain stable at **~2405 MHz / 2418 MHz** (the default application clock speeds) and do not throttle to a lower frequency.
 
-Applying this core clock drop to our peak theoretical formula yields:
-$$\text{Actual Power-Capped Peak} = 475.4 \text{ TFLOPS} \times \frac{1900}{2418} = 373.4 \text{ TFLOPS}$$
+Therefore, the clock rate is not physically throttled to ~1900 MHz. Instead, the achieved performance of **375.92 TFLOPS** represents **79.1%** of the true hardware peak of **475.4 TFLOPS** ($48\text{ SMs} \times 4096\text{ ops/cycle/SM} \times 2.418\text{ GHz}$). The remaining **~21% performance gap** is not caused by clock scaling, but rather by execution-level overheads (such as memory-bound scale conversion latency, register bank conflicts, instruction cache pressure, or launch overheads).
 
-Our achieved performance of **375.92 TFLOPS** represents **100.6%** of the actual power-capped hardware peak. The implementation has successfully saturated the maximum physical compute power allowed by the GPU's TDP limits.
+Further research is required to isolate and optimize these software execution bottlenecks.
 
 ---
 
