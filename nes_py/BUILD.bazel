@@ -1,0 +1,10 @@
+load("@rules_python//python:defs.bzl", "py_binary")
+
+py_binary(
+    name = "play",
+    srcs = ["play.py"],
+    deps = [
+        "@pypi//nes_py",
+    ],
+    visibility = ["//visibility:public"],
+)
