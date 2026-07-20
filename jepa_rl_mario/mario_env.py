@@ -19,7 +19,7 @@ class MarioEnv(gym.Env):
     Uses composition to wrap the JoypadSpace legacy emulator and adapt it to Gymnasium v1.0.0.
     """
 
-    metadata = {"render_modes": ["rgb_array"]}
+    metadata = {"render_modes": ["rgb_array", "human"]}
 
     def __init__(self, render_mode: str = "rgb_array") -> None:
         super().__init__()
@@ -60,7 +60,9 @@ class MarioEnv(gym.Env):
         return np.array(obs, dtype=np.uint8), float(reward), bool(terminated), bool(truncated), info
 
     def render(self) -> np.ndarray | None:
-        # Delegate to underlying nes_py renderer
+        if self.render_mode == "human":
+            self._env.render(mode="human")
+            return None
         return self._env.render(mode="rgb_array")
 
     def close(self) -> None:
