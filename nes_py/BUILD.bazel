@@ -4,6 +4,7 @@ py_binary(
     name = "play",
     srcs = ["play.py"],
     deps = [
+        "@pypi//gym_super_mario_bros",
         "@pypi//nes_py",
     ],
     visibility = ["//visibility:public"],

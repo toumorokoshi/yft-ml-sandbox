@@ -1,4 +1,4 @@
-"""A wrapper to expose the nes_py emulator via python3 -m nes_py.play."""
+"""A wrapper to expose the nes_py emulator using gym-super-mario-bros actions via python3 -m nes_py.play."""
 
 from __future__ import annotations
 
@@ -15,9 +15,12 @@ if "" in sys.path:
     sys.path.remove("")
 
 try:
-    from nes_py.app.cli import main as nes_py_main
+    from nes_py import NESEnv
+    from nes_py.wrappers import JoypadSpace
+    from gym_super_mario_bros.actions import SIMPLE_MOVEMENT
+    from nes_py.app.play_human import play_human
 except ImportError as e:
-    print("Error: Could not import nes_py. Ensure that the nes-py package is installed.", file=sys.stderr)
+    print("Error: Could not import nes_py or gym_super_mario_bros. Ensure packages are installed.", file=sys.stderr)
     sys.exit(1)
 finally:
     # Restore original path
@@ -25,17 +28,19 @@ finally:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Wrapper for nes_py CLI")
+    parser = argparse.ArgumentParser(description="Play Super Mario Bros using gym-super-mario-bros actions")
     parser.add_argument("--rom", required=True, help="Path to the NES ROM file")
 
-    # Parse only known args to preserve extra flags that the user might pass
-    args, unknown_args = parser.parse_known_args()
+    args = parser.parse_args()
 
-    # Translate --rom <path> into -r <path> expected by nes_py cli
-    sys.argv = [sys.argv[0], "-r", args.rom] + unknown_args
+    # 1. Create raw NESEnv with the ROM
+    raw_env = NESEnv(args.rom)
 
-    # Delegate execution to nes_py CLI main
-    nes_py_main()
+    # 2. Wrap it with JoypadSpace and SIMPLE_MOVEMENT (from gym_super_mario_bros)
+    env = JoypadSpace(raw_env, SIMPLE_MOVEMENT)
+
+    # 3. Launch human-play loop!
+    play_human(env)
 
 
 if __name__ == "__main__":
