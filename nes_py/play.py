@@ -80,6 +80,12 @@ def main() -> None:
     else:
         env = gym.make(args.env)
 
+    # Unwrap the environment to bypass gym 0.26+'s TimeLimit wrapper,
+    # which expects 5-tuple step returns and causes a ValueError when
+    # stepping the underlying 4-tuple environment.
+    env = env.unwrapped
+
+
     # Wrap the environment with action space if specified
     if args.actionspace != 'nes':
         actions = _ACTION_SPACES[args.actionspace]
