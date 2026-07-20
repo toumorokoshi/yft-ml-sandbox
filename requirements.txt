@@ -18,3 +18,4 @@ iree-base-runtime
 transformers
 numpy<2
 nes-py
+gym-super-mario-bros

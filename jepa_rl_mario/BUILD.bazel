@@ -4,7 +4,10 @@ py_library(
     name = "mario_env",
     srcs = ["mario_env.py"],
     deps = [
+        "@pypi//gym",
+        "@pypi//gym_super_mario_bros",
         "@pypi//gymnasium",
+        "@pypi//nes_py",
         "@pypi//numpy",
     ],
     visibility = ["//visibility:public"],
@@ -15,7 +18,8 @@ py_binary(
     srcs = ["main.py"],
     deps = [
         ":mario_env",
-        "@pypi//gymnasium",
+        "@pypi//matplotlib",
+        "@pypi//numpy",
     ],
     visibility = ["//visibility:public"],
 )
@@ -25,7 +29,6 @@ py_test(
     srcs = ["mario_env_test.py"],
     deps = [
         ":mario_env",
-        "@pypi//gymnasium",
         "@pypi//numpy",
     ],
 )
