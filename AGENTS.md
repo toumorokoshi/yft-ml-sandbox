@@ -13,10 +13,6 @@ order of operations.
 8. Identify any remaining issues or features that need to be implemented
    1. file them as bd issues (see [Issue Management](#issue-management)).
    2. include them in GAPS.md
-9. commit and push the change.
-   1. **IMPORTANT**: the commit and push should be performed as the regular user, *not* as the agent.
-10. if you were not able to fully address the bd issue, mark it as "blocked".
-    This will ensure the next worker does not pick it up again until a human reviews.
 
 ## Branch cleanup
 

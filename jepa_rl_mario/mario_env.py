@@ -24,7 +24,7 @@ class MarioEnv(gym.Env):
     def __init__(self, render_mode: str = "rgb_array") -> None:
         super().__init__()
         # 1. Create the legacy Gym environment and unwrap it to bypass incompatible TimeLimit wrapper
-        raw_env = legacy_gym.make("SuperMarioBros-v0").unwrapped
+        raw_env = legacy_gym.make("SuperMarioBros-v3").unwrapped
 
         # 2. Apply JoypadSpace wrapping to simplify action space
         self._env = JoypadSpace(raw_env, SIMPLE_MOVEMENT)
