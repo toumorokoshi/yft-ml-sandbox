@@ -13,3 +13,13 @@ This document tracks identified performance gaps, pending features, and optimiza
 - **Next Steps**:
   - Run profile sweeps via NVIDIA Nsight Compute (`ncu`) to identify cache hit rates, pipeline stalls, and register usage.
   - Implement fused scaling/quantization within a custom kernel to eliminate memory-write overheads.
+
+## 2. JEPA RL Mario Environment Baseline & Agent Training
+
+- **Status**: Open
+- **Description**: A basic Gymnasium RL environment scaffold has been created under `jepa_rl_mario`. The environment is ready, but no agent training pipeline or JEPA (Joint Embedding Predictive Architecture) components are implemented.
+- **Next Steps**:
+  - Implement a baseline RL agent (e.g., PPO, DQN, or random policy search) to verify agent convergence on the custom environment.
+  - Design and train the JEPA model on the Mario track states to learn robust representation embeddings.
+  - Implement the planning/control loops based on the JEPA representation.
+

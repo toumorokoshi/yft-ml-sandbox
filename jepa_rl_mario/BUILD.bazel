@@ -1,0 +1,31 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "mario_env",
+    srcs = ["mario_env.py"],
+    deps = [
+        "@pypi//gymnasium",
+        "@pypi//numpy",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+py_binary(
+    name = "main",
+    srcs = ["main.py"],
+    deps = [
+        ":mario_env",
+        "@pypi//gymnasium",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "mario_env_test",
+    srcs = ["mario_env_test.py"],
+    deps = [
+        ":mario_env",
+        "@pypi//gymnasium",
+        "@pypi//numpy",
+    ],
+)
