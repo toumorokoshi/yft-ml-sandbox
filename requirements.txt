@@ -16,4 +16,5 @@ matplotlib==3.10.0
 iree-base-compiler[onnx]
 iree-base-runtime
 transformers
+numpy<2
 nes-py
