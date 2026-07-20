@@ -1,4 +1,4 @@
-"""A wrapper to expose the nes_py emulator using gym-super-mario-bros actions via python3 -m nes_py.play."""
+"""A wrapper to expose the gym_super_mario_bros CLI via python3 -m nes_py.play."""
 
 from __future__ import annotations
 
@@ -6,41 +6,41 @@ import argparse
 import os
 import sys
 
-# Remove local directory from path to allow importing the installed third-party nes_py package
-local_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Remove local directory from path to allow importing the installed packages when running outside Bazel
 sys_path_backup = list(sys.path)
-if local_dir in sys.path:
-    sys.path.remove(local_dir)
-if "" in sys.path:
-    sys.path.remove("")
+if "RUNFILES_DIR" not in os.environ:
+    local_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if local_dir in sys.path:
+        sys.path.remove(local_dir)
+    if "" in sys.path:
+        sys.path.remove("")
 
 try:
-    from nes_py import NESEnv
-    from nes_py.wrappers import JoypadSpace
-    from gym_super_mario_bros.actions import SIMPLE_MOVEMENT
-    from nes_py.app.play_human import play_human
+    from gym_super_mario_bros._app.cli import main as gym_mario_main
 except ImportError as e:
-    print("Error: Could not import nes_py or gym_super_mario_bros. Ensure packages are installed.", file=sys.stderr)
+    print("Error: Could not import gym_super_mario_bros. Ensure the package is installed.", file=sys.stderr)
     sys.exit(1)
+
+
 finally:
     # Restore original path
     sys.path = sys_path_backup
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Play Super Mario Bros using gym-super-mario-bros actions")
-    parser.add_argument("--rom", required=True, help="Path to the NES ROM file")
+    parser = argparse.ArgumentParser(description="Wrapper to run gym_super_mario_bros CLI")
+    parser.add_argument("--env", "-e", default="SuperMarioBros-v0", help="The environment ID")
+    parser.add_argument("--mode", "-m", default="human", choices=["human", "random"], help="The control mode")
 
-    args = parser.parse_args()
+    # Parse args to intercept them and translate if necessary
+    args, unknown = parser.parse_known_args()
 
-    # 1. Create raw NESEnv with the ROM
-    raw_env = NESEnv(args.rom)
+    # Reconstruct sys.argv to call gym_super_mario_bros CLI main
+    # gym_super_mario_bros expects: -e <env> -m <mode>
+    sys.argv = [sys.argv[0], "-e", args.env, "-m", args.mode] + unknown
 
-    # 2. Wrap it with JoypadSpace and SIMPLE_MOVEMENT (from gym_super_mario_bros)
-    env = JoypadSpace(raw_env, SIMPLE_MOVEMENT)
-
-    # 3. Launch human-play loop!
-    play_human(env)
+    # Delegate execution to gym_super_mario_bros CLI main
+    gym_mario_main()
 
 
 if __name__ == "__main__":
