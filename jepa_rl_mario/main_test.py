@@ -19,6 +19,7 @@ class TestMainScaffolding(unittest.TestCase):
         self.assertEqual(args.episodes, 1)
         self.assertEqual(args.render_mode, "rgb_array")
         self.assertIsNone(args.seed)
+        self.assertEqual(args.log_level, "INFO")
 
     def test_parse_args_custom(self) -> None:
         args = parse_args([
@@ -27,12 +28,14 @@ class TestMainScaffolding(unittest.TestCase):
             "--render-mode", "none",
             "--output", "test_out.png",
             "--seed", "42",
+            "--log-level", "DEBUG",
         ])
         self.assertEqual(args.steps, 50)
         self.assertEqual(args.episodes, 3)
         self.assertEqual(args.render_mode, "none")
         self.assertEqual(args.output, "test_out.png")
         self.assertEqual(args.seed, 42)
+        self.assertEqual(args.log_level, "DEBUG")
 
     def test_save_frame_none(self) -> None:
         self.assertFalse(save_frame(None, "dummy.png"))

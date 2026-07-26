@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import sys
 from matplotlib import pyplot as plt
 import numpy as np
 
 from jepa_rl_mario.mario_env import MarioEnv
+
+logger = logging.getLogger(__name__)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -47,6 +50,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Optional random seed for environment action space and resetting (default: None)",
     )
+    parser.add_argument(
+        "--log-level",
+        type=str,
+        default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        help="Logging level (default: INFO)",
+    )
     return parser.parse_args(argv)
 
 
@@ -74,7 +84,7 @@ def run_simulation(
         obs, reward, terminated, truncated, info = env.step(action)
         total_reward += reward
         step_count += 1
-        print(f"Step {step+1} | Action: {action} | Reward: {reward:.1f} | Terminated: {terminated}")
+        logger.debug("Step %d | Action: %s | Reward: %.1f | Terminated: %s", step + 1, action, reward, terminated)
 
         if env.render_mode == "human":
             env.render()
@@ -89,16 +99,22 @@ def run_simulation(
 def save_frame(frame: np.ndarray | None, output_path: str) -> bool:
     """Saves the given frame to the specified output image path."""
     if frame is None:
-        print("Warning: Render returned None or render-mode is 'none', couldn't save frame.")
+        logger.warning("Render returned None or render-mode is 'none', couldn't save frame.")
         return False
     plt.imsave(output_path, frame)
-    print(f"Saved final frame of shape {frame.shape} to {output_path}")
+    logger.info("Saved final frame of shape %s to %s", frame.shape, output_path)
     return True
 
 
 def main(argv: list[str] | None = None) -> None:
     """Main execution function for running Mario simulation with CLI args."""
     args = parse_args(argv)
+
+    logging.basicConfig(
+        level=getattr(logging, args.log_level.upper(), logging.INFO),
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
 
     gym_render_mode = args.render_mode if args.render_mode in ["human", "rgb_array"] else "rgb_array"
     env = MarioEnv(render_mode=gym_render_mode)
@@ -108,10 +124,10 @@ def main(argv: list[str] | None = None) -> None:
     try:
         final_frame: np.ndarray | None = None
         for episode in range(args.episodes):
-            print(f"--- Episode {episode + 1}/{args.episodes} ---")
+            logger.info("--- Episode %d/%d ---", episode + 1, args.episodes)
             seed = args.seed + episode if args.seed is not None else None
             total_reward, steps_taken, frame = run_simulation(env, steps=args.steps, seed=seed)
-            print(f"Episode {episode + 1} finished in {steps_taken} steps | Total Reward: {total_reward:.1f}")
+            logger.info("Episode %d finished in %d steps | Total Reward: %.1f", episode + 1, steps_taken, total_reward)
             if frame is not None:
                 final_frame = frame
 
@@ -123,4 +139,5 @@ def main(argv: list[str] | None = None) -> None:
 
 if __name__ == "__main__":
     main(sys.argv[1:])
+
 
