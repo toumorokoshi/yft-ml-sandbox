@@ -18,4 +18,5 @@ iree-base-runtime
 transformers
 nes-py
 gym-super-mario-bros
+numpy>=2.0.0
 
