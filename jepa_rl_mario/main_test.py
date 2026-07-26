@@ -6,8 +6,8 @@ import tempfile
 import unittest
 import numpy as np
 
-from jepa_rl_mario.main import parse_args, save_frame, run_simulation
-from jepa_rl_mario.mario_env import MarioEnv
+from jepa_rl_mario.main import DEFAULT_EPISODES, DEFAULT_STEPS, parse_args, run_simulation, save_frame
+from jepa_rl_mario.mario_env import MarioEnv, RenderMode
 
 
 class TestMainScaffolding(unittest.TestCase):
@@ -15,9 +15,9 @@ class TestMainScaffolding(unittest.TestCase):
 
     def test_parse_args_defaults(self) -> None:
         args = parse_args([])
-        self.assertEqual(args.steps, 20)
-        self.assertEqual(args.episodes, 1)
-        self.assertEqual(args.render_mode, "rgb_array")
+        self.assertEqual(args.steps, DEFAULT_STEPS)
+        self.assertEqual(args.episodes, DEFAULT_EPISODES)
+        self.assertEqual(args.render_mode, RenderMode.RGB_ARRAY)
         self.assertIsNone(args.seed)
         self.assertEqual(args.log_level, "INFO")
 
@@ -32,7 +32,7 @@ class TestMainScaffolding(unittest.TestCase):
         ])
         self.assertEqual(args.steps, 50)
         self.assertEqual(args.episodes, 3)
-        self.assertEqual(args.render_mode, "none")
+        self.assertEqual(args.render_mode, RenderMode.NONE)
         self.assertEqual(args.output, "test_out.png")
         self.assertEqual(args.seed, 42)
         self.assertEqual(args.log_level, "DEBUG")
@@ -46,7 +46,7 @@ class TestMainScaffolding(unittest.TestCase):
             self.assertTrue(save_frame(mock_frame, tmp.name))
 
     def test_run_simulation(self) -> None:
-        env = MarioEnv(render_mode="rgb_array")
+        env = MarioEnv(render_mode=RenderMode.RGB_ARRAY)
         try:
             total_reward, steps_taken, frame = run_simulation(env, steps=3, seed=123)
             self.assertEqual(steps_taken, 3)
@@ -59,3 +59,4 @@ class TestMainScaffolding(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

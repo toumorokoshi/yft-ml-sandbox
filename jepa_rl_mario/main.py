@@ -9,9 +9,12 @@ import sys
 from matplotlib import pyplot as plt
 import numpy as np
 
-from jepa_rl_mario.mario_env import MarioEnv
+from jepa_rl_mario.mario_env import MarioEnv, RenderMode
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_STEPS = 1000
+DEFAULT_EPISODES = 10
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -22,21 +25,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--steps",
         type=int,
-        default=20,
-        help="Maximum number of steps to run per episode (default: 20)",
+        default=DEFAULT_STEPS,
+        help=f"Maximum number of steps to run per episode (default: {DEFAULT_STEPS})",
     )
     parser.add_argument(
         "--episodes",
         type=int,
-        default=1,
-        help="Number of episodes to simulate (default: 1)",
+        default=DEFAULT_EPISODES,
+        help=f"Number of episodes to simulate (default: {DEFAULT_EPISODES})",
     )
     parser.add_argument(
         "--render-mode",
-        type=str,
-        default="rgb_array",
-        choices=["rgb_array", "human", "none"],
-        help="Rendering mode for Gymnasium (default: rgb_array)",
+        type=RenderMode.from_str,
+        default=RenderMode.RGB_ARRAY,
+        choices=list(RenderMode),
+        help=f"Rendering mode for Gymnasium (default: {RenderMode.RGB_ARRAY.value})",
     )
     parser.add_argument(
         "--output",
@@ -86,13 +89,13 @@ def run_simulation(
         step_count += 1
         logger.debug("Step %d | Action: %s | Reward: %.1f | Terminated: %s", step + 1, action, reward, terminated)
 
-        if env.render_mode == "human":
+        if env.render_mode == RenderMode.HUMAN:
             env.render()
 
         if terminated or truncated:
             break
 
-    frame = env.render() if env.render_mode != "none" else None
+    frame = env.render() if env.render_mode != RenderMode.NONE else None
     return total_reward, step_count, frame
 
 
@@ -116,10 +119,7 @@ def main(argv: list[str] | None = None) -> None:
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
-    gym_render_mode = args.render_mode if args.render_mode in ["human", "rgb_array"] else "rgb_array"
-    env = MarioEnv(render_mode=gym_render_mode)
-    if args.render_mode == "none":
-        env.render_mode = "none"
+    env = MarioEnv(render_mode=args.render_mode)
 
     try:
         final_frame: np.ndarray | None = None
@@ -131,7 +131,7 @@ def main(argv: list[str] | None = None) -> None:
             if frame is not None:
                 final_frame = frame
 
-        if args.render_mode != "none" and final_frame is not None:
+        if args.render_mode != RenderMode.NONE and final_frame is not None:
             save_frame(final_frame, args.output)
     finally:
         env.close()
@@ -139,5 +139,6 @@ def main(argv: list[str] | None = None) -> None:
 
 if __name__ == "__main__":
     main(sys.argv[1:])
+
 
 

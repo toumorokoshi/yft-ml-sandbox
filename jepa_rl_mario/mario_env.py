@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from enum import Enum
 from typing import Any
 
 import gym as legacy_gym
@@ -13,15 +14,33 @@ from nes_py.wrappers import JoypadSpace
 from gym_super_mario_bros.actions import SIMPLE_MOVEMENT
 
 
+class RenderMode(str, Enum):
+    """Supported render modes for MarioEnv."""
+
+    RGB_ARRAY = "rgb_array"
+    HUMAN = "human"
+    NONE = "none"
+
+    @classmethod
+    def from_str(cls, value: str | RenderMode) -> RenderMode:
+        if isinstance(value, cls):
+            return value
+        try:
+            return cls(str(value).lower())
+        except ValueError:
+            valid = [e.value for e in cls]
+            raise ValueError(f"Invalid render mode '{value}'. Valid choices: {valid}")
+
+
 class MarioEnv(gym.Env):
     """Gymnasium environment wrapper around gym_super_mario_bros.
 
     Uses composition to wrap the JoypadSpace legacy emulator and adapt it to Gymnasium v1.0.0.
     """
 
-    metadata = {"render_modes": ["rgb_array", "human"]}
+    metadata = {"render_modes": [RenderMode.RGB_ARRAY.value, RenderMode.HUMAN.value, RenderMode.NONE.value]}
 
-    def __init__(self, render_mode: str = "rgb_array") -> None:
+    def __init__(self, render_mode: str | RenderMode = RenderMode.RGB_ARRAY) -> None:
         super().__init__()
         # 1. Create the legacy Gym environment and unwrap it to bypass incompatible TimeLimit wrapper
         raw_env = legacy_gym.make("SuperMarioBros-v3").unwrapped
@@ -32,7 +51,7 @@ class MarioEnv(gym.Env):
         # Expose spaces
         self.action_space = self._env.action_space
         self.observation_space = self._env.observation_space
-        self.render_mode = render_mode
+        self.render_mode = RenderMode.from_str(render_mode)
 
     def reset(
         self, *, seed: int | None = None, options: dict[str, Any] | None = None
@@ -60,10 +79,13 @@ class MarioEnv(gym.Env):
         return np.array(obs, dtype=np.uint8), float(reward), bool(terminated), bool(truncated), info
 
     def render(self) -> np.ndarray | None:
-        if self.render_mode == "human":
+        if self.render_mode == RenderMode.HUMAN:
             self._env.render(mode="human")
+            return None
+        if self.render_mode == RenderMode.NONE:
             return None
         return self._env.render(mode="rgb_array")
 
     def close(self) -> None:
         self._env.close()
+
