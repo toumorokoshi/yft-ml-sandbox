@@ -4,7 +4,11 @@ py_library(
     name = "yft_utils",
     srcs = [
         "__init__.py",
+        "nes_py_patch.py",
         "timeit.py",
+    ],
+    deps = [
+        "@pypi//nes_py",
     ],
     visibility = ["//visibility:public"],
 )
@@ -16,3 +20,13 @@ py_test(
         ":yft_utils",
     ],
 )
+
+py_test(
+    name = "nes_py_patch_test",
+    srcs = ["nes_py_patch_test.py"],
+    deps = [
+        ":yft_utils",
+        "@pypi//numpy",
+    ],
+)
+

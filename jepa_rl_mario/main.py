@@ -85,6 +85,7 @@ def run_simulation(
     for step in range(steps):
         action = env.action_space.sample()
         obs, reward, terminated, truncated, info = env.step(action)
+
         total_reward += reward
         step_count += 1
         logger.debug("Step %d | Action: %s | Reward: %.1f | Terminated: %s", step + 1, action, reward, terminated)

@@ -9,9 +9,11 @@ import gym as legacy_gym
 import gymnasium as gym
 import numpy as np
 
+import yft_utils.nes_py_patch  # noqa: F401 (patches nes_py for NumPy 2.x compatibility)
 import gym_super_mario_bros
 from nes_py.wrappers import JoypadSpace
 from gym_super_mario_bros.actions import SIMPLE_MOVEMENT
+
 
 
 class RenderMode(str, Enum):

@@ -4,6 +4,7 @@ py_library(
     name = "mario_env",
     srcs = ["mario_env.py"],
     deps = [
+        "//yft_utils",
         "@pypi//gym",
         "@pypi//gym_super_mario_bros",
         "@pypi//gymnasium",
