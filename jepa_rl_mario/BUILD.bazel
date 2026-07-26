@@ -24,13 +24,22 @@ py_library(
     visibility = ["//visibility:public"],
 )
 
-py_binary(
-    name = "main",
+py_library(
+    name = "main_lib",
     srcs = ["main.py"],
     deps = [
         ":mario_env",
         "@pypi//matplotlib",
         "@pypi//numpy",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+py_binary(
+    name = "main",
+    srcs = ["main.py"],
+    deps = [
+        ":main_lib",
     ],
     visibility = ["//visibility:public"],
 )
@@ -54,3 +63,14 @@ py_test(
         "@pypi//torch",
     ],
 )
+
+py_test(
+    name = "main_test",
+    srcs = ["main_test.py"],
+    deps = [
+        ":main_lib",
+        ":mario_env",
+        "@pypi//numpy",
+    ],
+)
+
