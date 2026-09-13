@@ -7,7 +7,8 @@ import numpy as np
 import torch
 
 from jepa_rl_mario.mario_env import MarioEnv
-from jepa_rl_mario.train import preprocess_observation, select_action, compute_loss, QNetwork
+from jepa_rl_mario.model import MarioModel
+from jepa_rl_mario.train import preprocess_observation, select_action, compute_loss
 
 
 class TestMarioEnv(unittest.TestCase):
@@ -67,8 +68,8 @@ class TestDQNAgentHelpers(unittest.TestCase):
             self.assertTrue(0 <= action < 4)
 
     def test_compute_loss(self) -> None:
-        q_network = QNetwork(num_actions=2)
-        target_network = QNetwork(num_actions=2)
+        q_network = MarioModel(num_actions=2)
+        target_network = MarioModel(num_actions=2)
 
         # Mock transition batch
         states = torch.randn(2, 1, 80, 80)

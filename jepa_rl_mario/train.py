@@ -11,6 +11,7 @@ import torch.nn as nn
 import torch.optim as optim
 
 from jepa_rl_mario.mario_env import MarioEnv
+from jepa_rl_mario.model import MarioModel
 
 # Constants
 NUM_ACTIONS = 7
@@ -34,30 +35,6 @@ def select_action(q_values: torch.Tensor, epsilon: float, num_actions: int) -> i
     if random.random() < epsilon:
         return random.randint(0, num_actions - 1)
     return int(q_values.argmax().item())
-
-
-class QNetwork(nn.Module):
-    """Convolutional Neural Network to evaluate Q-values for Mario actions."""
-
-    def __init__(self, num_actions: int) -> None:
-        super().__init__()
-        self.conv = nn.Sequential(
-            nn.Conv2d(1, 16, kernel_size=8, stride=4),
-            nn.ReLU(),
-            nn.Conv2d(16, 32, kernel_size=4, stride=2),
-            nn.ReLU(),
-        )
-        self.fc = nn.Sequential(
-            nn.Linear(32 * 8 * 8, 256),
-            nn.ReLU(),
-            nn.Linear(256, num_actions),
-        )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # Input shape: (batch, 1, 80, 80)
-        conv_out = self.conv(x)
-        conv_out = conv_out.view(conv_out.size(0), -1)
-        return self.fc(conv_out)
 
 
 def compute_loss(
@@ -171,8 +148,8 @@ def main() -> None:
     if args.render_mode == "none":
         env.render_mode = "none"
 
-    q_network = QNetwork(NUM_ACTIONS)
-    target_network = QNetwork(NUM_ACTIONS)
+    q_network = MarioModel(NUM_ACTIONS)
+    target_network = MarioModel(NUM_ACTIONS)
     target_network.load_state_dict(q_network.state_dict())
     optimizer = optim.Adam(q_network.parameters(), lr=LR)
 

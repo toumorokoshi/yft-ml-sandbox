@@ -16,10 +16,10 @@ This document tracks identified performance gaps, pending features, and optimiza
 
 ## 2. JEPA RL Mario Environment Baseline & Agent Training
 
-- **Status**: Open
-- **Description**: A basic Gymnasium RL environment scaffold has been created under `jepa_rl_mario`. The environment is ready, but no agent training pipeline or JEPA (Joint Embedding Predictive Architecture) components are implemented.
+- **Status**: In Progress
+- **Description**: A Gymnasium RL environment scaffold and baseline DQN training loop have been created under `jepa_rl_mario` using `MarioModel`. Next steps include transitioning from basic CNN to ViT/JEPA architecture.
 - **Next Steps**:
-  - Implement a baseline RL agent (e.g., PPO, DQN, or random policy search) to verify agent convergence on the custom environment.
+  - Implement ViT attention layers and patch embeddings for visual state representation.
   - Design and train the JEPA model on the Mario track states to learn robust representation embeddings.
-  - Implement the planning/control loops based on the JEPA representation.
+  - Implement planning/control loops based on the JEPA representation.
 

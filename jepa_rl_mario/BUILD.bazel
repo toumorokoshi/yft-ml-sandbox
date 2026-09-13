@@ -15,10 +15,20 @@ py_library(
 )
 
 py_library(
+    name = "model",
+    srcs = ["model.py"],
+    deps = [
+        "@pypi//torch",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
     name = "train_lib",
     srcs = ["train.py"],
     deps = [
         ":mario_env",
+        ":model",
         "@pypi//numpy",
         "@pypi//torch",
     ],
@@ -59,6 +69,7 @@ py_test(
     srcs = ["mario_env_test.py"],
     deps = [
         ":mario_env",
+        ":model",
         ":train_lib",
         "@pypi//numpy",
         "@pypi//torch",
@@ -74,4 +85,14 @@ py_test(
         "@pypi//numpy",
     ],
 )
+
+py_test(
+    name = "model_test",
+    srcs = ["model_test.py"],
+    deps = [
+        ":model",
+        "@pypi//torch",
+    ],
+)
+
 
