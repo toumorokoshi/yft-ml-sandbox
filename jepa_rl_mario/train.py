@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 import random
-import sys
+
 import numpy as np
 import torch
 import torch.nn as nn

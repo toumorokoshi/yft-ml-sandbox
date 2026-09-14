@@ -6,13 +6,13 @@ from enum import Enum
 from typing import Any
 
 import gym as legacy_gym
+import gym_super_mario_bros  # noqa: F401 (registers SuperMarioBros environments in gym)
+from gym_super_mario_bros.actions import SIMPLE_MOVEMENT
 import gymnasium as gym
+from nes_py.wrappers import JoypadSpace
 import numpy as np
 
 import yft_utils.nes_py_patch  # noqa: F401 (patches nes_py for NumPy 2.x compatibility)
-import gym_super_mario_bros
-from nes_py.wrappers import JoypadSpace
-from gym_super_mario_bros.actions import SIMPLE_MOVEMENT
 
 
 

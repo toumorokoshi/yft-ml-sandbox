@@ -86,13 +86,25 @@ py_test(
     ],
 )
 
+py_library(
+    name = "jepa_rl_mario",
+    srcs = ["__init__.py"],
+    deps = [
+        ":mario_env",
+        ":model",
+    ],
+    visibility = ["//visibility:public"],
+)
+
 py_test(
     name = "model_test",
     srcs = ["model_test.py"],
     deps = [
+        ":jepa_rl_mario",
         ":model",
         "@pypi//torch",
     ],
 )
+
 
 

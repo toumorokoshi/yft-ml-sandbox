@@ -1,5 +1,10 @@
+"""Convolutional Neural Network to evaluate Q-values for Mario actions."""
+
+from __future__ import annotations
+
 import torch
 import torch.nn as nn
+
 
 class MarioModel(nn.Module):
     """Convolutional Neural Network to evaluate Q-values for Mario actions."""
@@ -23,4 +28,3 @@ class MarioModel(nn.Module):
         conv_out = self.conv(x)
         conv_out = conv_out.view(conv_out.size(0), -1)
         return self.fc(conv_out)
-
