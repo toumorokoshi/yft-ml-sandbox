@@ -1,30 +1,17 @@
-"""Convolutional Neural Network to evaluate Q-values for Mario actions."""
-
-from __future__ import annotations
-
 import torch
 import torch.nn as nn
-
+import torch.nn.functional as F
 
 class MarioModel(nn.Module):
-    """Convolutional Neural Network to evaluate Q-values for Mario actions."""
 
-    def __init__(self, num_actions: int) -> None:
-        super().__init__()
-        self.conv = nn.Sequential(
-            nn.Conv2d(1, 16, kernel_size=8, stride=4),
-            nn.ReLU(),
-            nn.Conv2d(16, 32, kernel_size=4, stride=2),
-            nn.ReLU(),
-        )
-        self.fc = nn.Sequential(
-            nn.Linear(32 * 8 * 8, 256),
-            nn.ReLU(),
-            nn.Linear(256, num_actions),
-        )
+    def __init__(self, input_dim, hidden_dim, output_dim):
+        super(MarioModel, self).__init__()
+        self.fc1 = nn.Linear(input_dim, hidden_dim)
+        self.fc2 = nn.Linear(hidden_dim, hidden_dim)
+        self.fc3 = nn.Linear(hidden_dim, output_dim)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # Input shape: (batch, 1, 80, 80)
-        conv_out = self.conv(x)
-        conv_out = conv_out.view(conv_out.size(0), -1)
-        return self.fc(conv_out)
+    def forward(self, x):
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = self.fc3(x)
+        return x
