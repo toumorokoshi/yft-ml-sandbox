@@ -19,16 +19,16 @@ GAMMA = 0.99
 BATCH_SIZE = 32
 LR = 1e-3
 REPLAY_SIZE = 10000
+HEIGHT = 240
+WIDTH = 256
+
 
 
 def preprocess_observation(obs: np.ndarray) -> np.ndarray:
     """Pure function to downsample and grayscale an observation from (240, 256, 3) to (80, 80)."""
     # Simple color channel average
     gray = obs.mean(axis=2)
-    # Downsample by slicing with stride 3 to get size (80, 85) then crop to (80, 80)
-    resized = gray[::3, ::3][:80, :80]
-    return (resized / 255.0).astype(np.float32)
-
+    return gray
 
 def select_action(q_values: torch.Tensor, epsilon: float, num_actions: int) -> int:
     """Pure function for epsilon-greedy action selection."""
@@ -148,7 +148,7 @@ def main() -> None:
     if args.render_mode == "none":
         env.render_mode = "none"
 
-    q_network = MarioModel(NUM_ACTIONS)
+    q_network = MarioModel(NUM_ACTIONS, )
     target_network = MarioModel(NUM_ACTIONS)
     target_network.load_state_dict(q_network.state_dict())
     optimizer = optim.Adam(q_network.parameters(), lr=LR)
