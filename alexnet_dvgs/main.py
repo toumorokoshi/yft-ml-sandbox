@@ -10,6 +10,7 @@ from torchvision.utils import save_image
 
 from alexnet_core.model import NeuralNetwork, SIZE
 from alexnet_core.recipe import TEST_TRANSFORM
+from yft_utils import detect_device
 
 # ImageNet normalization statistics
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
@@ -25,12 +26,9 @@ DUGS_PROJECTION_SIZE = 2**DUGS_PROJECTIONS_SIZE_BASE_2
 
 def run_dvgs(args: argparse.Namespace, model_cls=NeuralNetwork, transform=TEST_TRANSFORM) -> None:
     print(f"Running DVGS with threshold {args.threshold} on {args.samples} samples...")
-    device = (
-        torch.accelerator.current_accelerator().type
-        if torch.accelerator.is_available()
-        else "cpu"
-    )
-    print(f"Using device: {device}")
+    dev_info = detect_device(getattr(args, "device", None))
+    device = dev_info.device
+    print(f"Using device: {device} ({dev_info.device_name}) on platform {dev_info.platform}")
 
     model = model_cls().to(device)
     if args.model_path:
@@ -136,6 +134,13 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument(
         "--output-dir", type=str, default=None, help="Directory to save selected images"
+    )
+    parser.add_argument(
+        "--device",
+        type=str,
+        default="auto",
+        choices=["auto", "cuda", "mps", "cpu"],
+        help="Target accelerator device (auto, cuda, mps, cpu)",
     )
 
     return parser.parse_args(argv[1:])

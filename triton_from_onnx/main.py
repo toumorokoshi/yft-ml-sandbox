@@ -19,17 +19,18 @@ def save_profile_trace(prof: torch.profiler.profile, path: str) -> None:
     prof.export_chrome_trace(path)
 
 
+from yft_utils import detect_device, get_profiler_activities
+
+
 def profile_function(
     func,
+    device_type: str,
     *args,
     **kwargs,
 ):
     """Inner function: Runs the function under torch.profiler and returns result and profiler."""
     with torch.profiler.profile(
-        activities=[
-            torch.profiler.ProfilerActivity.CPU,
-            torch.profiler.ProfilerActivity.CUDA,
-        ],
+        activities=get_profiler_activities(device_type),
         record_shapes=True,
         with_stack=True,
     ) as prof:
@@ -146,15 +147,13 @@ def main() -> None:
     )
 
     # 1. Choose the device
-    device = (
-        torch.accelerator.current_accelerator().type
-        if torch.accelerator.is_available()
-        else "cpu"
-    )
-    print(f"Detected device: {device}")
-    if device == "cpu":
-        print("Triton requires a GPU (CUDA or ROCm) to run. Cannot execute on CPU.")
-        sys.exit(1)
+    dev_info = detect_device()
+    device = str(dev_info.device)
+    supports_triton = (dev_info.device_type == "cuda")
+    print(f"Detected device: {device} ({dev_info.device_name}) on platform '{dev_info.platform}'")
+
+    if not supports_triton:
+        print(f"Notice: Triton GPU kernels require CUDA or ROCm. Falling back to PyTorch reference execution on {dev_info.device_name}.")
 
     # 2. Check if model path exists
     if not os.path.exists(args.model_path):
@@ -177,25 +176,29 @@ def main() -> None:
     triton_profile_path = os.path.join(PROFILE_DIR, f"triton_{model_name}.json")
     pytorch_profile_path = os.path.join(PROFILE_DIR, f"pytorch_{model_name}.json")
 
+    triton_outputs = {}
+    ref_outputs = {}
+
     for i in range(NUM_TRIALS):
         is_last_trial = (i == NUM_TRIALS - 1)
 
-        # 5. Run the model using Triton-backed ONNX interpreter
-        print(f"\nExecuting ONNX model using Triton... ({i} out of {NUM_TRIALS})")
-        try:
-            if is_last_trial:
-                print(f"Profiling Triton execution (saving trace to {triton_profile_path})...")
-                triton_outputs, prof = profile_function(
-                    run_onnx_with_triton, loaded_model, inputs, device
-                )
-                save_profile_trace(prof, triton_profile_path)
-            else:
-                timed_triton = timeit(run_onnx_with_triton)
-                triton_outputs, triton_time = timed_triton(loaded_model, inputs, device)
-                print(f"Triton execution time: {triton_time:.6f} seconds")
-        except Exception as e:
-            print(f"Error during Triton execution: {e}")
-            sys.exit(1)
+        # 5. Run the model using Triton-backed ONNX interpreter (if supported)
+        if supports_triton:
+            print(f"\nExecuting ONNX model using Triton... ({i} out of {NUM_TRIALS})")
+            try:
+                if is_last_trial:
+                    print(f"Profiling Triton execution (saving trace to {triton_profile_path})...")
+                    triton_outputs, prof = profile_function(
+                        run_onnx_with_triton, dev_info.device_type, loaded_model, inputs, device
+                    )
+                    save_profile_trace(prof, triton_profile_path)
+                else:
+                    timed_triton = timeit(run_onnx_with_triton)
+                    triton_outputs, triton_time = timed_triton(loaded_model, inputs, device)
+                    print(f"Triton execution time: {triton_time:.6f} seconds")
+            except Exception as e:
+                print(f"Error during Triton execution: {e}")
+                sys.exit(1)
 
         # 6. Verify correctness against PyTorch reference interpreter
         print("Executing ONNX model using PyTorch reference interpreter...")
@@ -203,7 +206,7 @@ def main() -> None:
             if is_last_trial:
                 print(f"Profiling PyTorch reference execution (saving trace to {pytorch_profile_path})...")
                 ref_outputs, prof = profile_function(
-                    run_onnx_with_pytorch, loaded_model, inputs, device
+                    run_onnx_with_pytorch, dev_info.device_type, loaded_model, inputs, device
                 )
                 save_profile_trace(prof, pytorch_profile_path)
             else:
@@ -214,26 +217,28 @@ def main() -> None:
             print(f"Error during reference execution: {e}")
             sys.exit(1)
 
+    # 7. Compare results if Triton ran
+    if supports_triton and triton_outputs:
+        print("\n--- Outputs Comparison ---")
+        all_correct = True
+        for name in triton_outputs.keys():
+            t_out = triton_outputs[name]
+            r_out = ref_outputs[name]
+            is_correct = torch.allclose(t_out, r_out, atol=1e-4, rtol=1e-4)
+            print(f"Output '{name}': Triton shape={t_out.shape}, PyTorch shape={r_out.shape}")
+            if is_correct:
+                print(f"  Result match: PASS")
+            else:
+                print(f"  Result match: FAIL")
+                all_correct = False
 
-    # 7. Compare results
-    print("\n--- Outputs Comparison ---")
-    all_correct = True
-    for name in triton_outputs.keys():
-        t_out = triton_outputs[name]
-        r_out = ref_outputs[name]
-        is_correct = torch.allclose(t_out, r_out, atol=1e-4, rtol=1e-4)
-        print(f"Output '{name}': Triton shape={t_out.shape}, PyTorch shape={r_out.shape}")
-        if is_correct:
-            print(f"  Result match: PASS")
+        if all_correct:
+            print("\nSUCCESS: Triton output matches PyTorch reference execution!")
         else:
-            print(f"  Result match: FAIL")
-            all_correct = False
-
-    if all_correct:
-        print("\nSUCCESS: Triton output matches PyTorch reference execution!")
+            print("\nFAILURE: Triton output does not match PyTorch reference execution!")
+            sys.exit(1)
     else:
-        print("\nFAILURE: Triton output does not match PyTorch reference execution!")
-        sys.exit(1)
+        print(f"\nSUCCESS: PyTorch reference execution completed on {dev_info.device_name}!")
 
 
 if __name__ == "__main__":

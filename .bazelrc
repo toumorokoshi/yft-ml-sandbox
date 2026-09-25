@@ -19,7 +19,21 @@ build --disk_cache=~/.cache/bazel
 
 # Platform settings
 build:macos --cxxopt=-std=c++17
+build:macos --action_env=PYTORCH_ENABLE_MPS_FALLBACK=1
+test:macos --test_env=PYTORCH_ENABLE_MPS_FALLBACK=1
+
 build:linux --cxxopt=-std=c++17
+build:linux --action_env=CUDA_VISIBLE_DEVICES
+test:linux --test_env=CUDA_VISIBLE_DEVICES
+build:linux --action_env=HSA_OVERRIDE_GFX_VERSION
+test:linux --test_env=HSA_OVERRIDE_GFX_VERSION
+
+# Accelerator configuration shortcuts
+build:rocm --action_env=HSA_OVERRIDE_GFX_VERSION=11.0.0
+test:rocm --test_env=HSA_OVERRIDE_GFX_VERSION=11.0.0
+
+build:cuda --action_env=CUDA_VISIBLE_DEVICES=0
+test:cuda --test_env=CUDA_VISIBLE_DEVICES=0
 
 # Try to import user-specific configuration
 try-import %workspace%/.bazelrc.user

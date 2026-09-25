@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import random
+from typing import Final, Optional
 
 import numpy as np
 import torch
@@ -12,23 +13,25 @@ import torch.optim as optim
 
 from jepa_rl_mario.mario_env import MarioEnv
 from jepa_rl_mario.model import MarioModel
+from yft_utils import detect_device
 
-# Constants
-NUM_ACTIONS = 7
-GAMMA = 0.99
-BATCH_SIZE = 32
-LR = 1e-3
-REPLAY_SIZE = 10000
-HEIGHT = 240
-WIDTH = 256
-
+# Constants (Rule 5)
+NUM_ACTIONS: Final[int] = 7
+GAMMA: Final[float] = 0.99
+BATCH_SIZE: Final[int] = 32
+LR: Final[float] = 1e-3
+REPLAY_SIZE: Final[int] = 10000
+HEIGHT: Final[int] = 240
+WIDTH: Final[int] = 256
+DEFAULT_EPISODES: Final[int] = 5
+DEFAULT_STEPS: Final[int] = 500
 
 
 def preprocess_observation(obs: np.ndarray) -> np.ndarray:
-    """Pure function to downsample and grayscale an observation from (240, 256, 3) to (80, 80)."""
-    # Simple color channel average
+    """Pure function to downsample and grayscale an observation from (240, 256, 3) to (240, 256)."""
     gray = obs.mean(axis=2)
     return gray
+
 
 def select_action(q_values: torch.Tensor, epsilon: float, num_actions: int) -> int:
     """Pure function for epsilon-greedy action selection."""
@@ -69,15 +72,16 @@ def run_episode(
     max_steps: int,
     batch_size: int,
     gamma: float,
+    device: torch.device,
 ) -> float:
     """Wrapper function executing environment interactions (IO) and training steps."""
     obs, _ = env.reset()
     state = preprocess_observation(obs)
     total_reward = 0.0
 
-    for step in range(max_steps):
+    for _ in range(max_steps):
         # 1. Choose action
-        state_tensor = torch.tensor(state, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
+        state_tensor = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0).unsqueeze(0)
         with torch.no_grad():
             q_values = q_network(state_tensor)
         action = select_action(q_values, epsilon, NUM_ACTIONS)
@@ -108,11 +112,11 @@ def run_episode(
             loss = compute_loss(
                 q_network,
                 target_network,
-                torch.tensor(np.array(b_states), dtype=torch.float32).unsqueeze(1),
-                torch.tensor(b_actions, dtype=torch.long),
-                torch.tensor(b_rewards, dtype=torch.float32),
-                torch.tensor(np.array(b_next_states), dtype=torch.float32).unsqueeze(1),
-                torch.tensor(b_dones, dtype=torch.float32),
+                torch.tensor(np.array(b_states), dtype=torch.float32, device=device).unsqueeze(1),
+                torch.tensor(b_actions, dtype=torch.long, device=device),
+                torch.tensor(b_rewards, dtype=torch.float32, device=device),
+                torch.tensor(np.array(b_next_states), dtype=torch.float32, device=device).unsqueeze(1),
+                torch.tensor(b_dones, dtype=torch.float32, device=device),
                 gamma,
             )
 
@@ -133,10 +137,17 @@ def main() -> None:
         type=str,
         default="human",
         choices=["human", "rgb_array", "none"],
-        help="Interactive rendering mode"
+        help="Interactive rendering mode",
     )
-    parser.add_argument("--episodes", type=int, default=5, help="Number of training episodes")
-    parser.add_argument("--steps", type=int, default=500, help="Max steps per episode")
+    parser.add_argument("--episodes", type=int, default=DEFAULT_EPISODES, help="Number of training episodes")
+    parser.add_argument("--steps", type=int, default=DEFAULT_STEPS, help="Max steps per episode")
+    parser.add_argument(
+        "--device",
+        type=str,
+        default="auto",
+        choices=["auto", "cuda", "mps", "cpu"],
+        help="Target accelerator device (auto, cuda, mps, cpu)",
+    )
 
     args = parser.parse_args()
 
@@ -148,8 +159,11 @@ def main() -> None:
     if args.render_mode == "none":
         env.render_mode = "none"
 
-    q_network = MarioModel(NUM_ACTIONS, )
-    target_network = MarioModel(NUM_ACTIONS)
+    dev_info = detect_device(args.device)
+    print(f"Using device: {dev_info.device} ({dev_info.device_name}) on platform '{dev_info.platform}'")
+
+    q_network = MarioModel(num_actions=NUM_ACTIONS, height=HEIGHT, width=WIDTH).to(dev_info.device)
+    target_network = MarioModel(num_actions=NUM_ACTIONS, height=HEIGHT, width=WIDTH).to(dev_info.device)
     target_network.load_state_dict(q_network.state_dict())
     optimizer = optim.Adam(q_network.parameters(), lr=LR)
 
@@ -170,6 +184,7 @@ def main() -> None:
                 args.steps,
                 BATCH_SIZE,
                 GAMMA,
+                dev_info.device,
             )
             epsilon = max(epsilon_min, epsilon * epsilon_decay)
             print(f"Episode {ep+1}/{args.episodes} | Total Reward: {reward:.1f} | Epsilon: {epsilon:.2f}")

@@ -5,7 +5,9 @@ py_library(
     srcs = [
         "__init__.py",
         "amd.py",
+        "apple.py",
         "interface.py",
+        "nvidia.py",
     ],
     visibility = ["//visibility:public"],
 )
@@ -13,6 +15,24 @@ py_library(
 py_test(
     name = "amd_test",
     srcs = ["amd_test.py"],
+    tags = ["local"],
+    deps = [
+        ":gpu_device_info",
+    ],
+)
+
+py_test(
+    name = "nvidia_test",
+    srcs = ["nvidia_test.py"],
+    tags = ["local"],
+    deps = [
+        ":gpu_device_info",
+    ],
+)
+
+py_test(
+    name = "apple_test",
+    srcs = ["apple_test.py"],
     tags = ["local"],
     deps = [
         ":gpu_device_info",

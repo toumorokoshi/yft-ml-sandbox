@@ -4,13 +4,24 @@ py_library(
     name = "yft_utils",
     srcs = [
         "__init__.py",
+        "device.py",
         "nes_py_patch.py",
         "timeit.py",
     ],
     deps = [
         "@pypi//nes_py",
+        "@pypi//torch",
     ],
     visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "device_test",
+    srcs = ["device_test.py"],
+    deps = [
+        ":yft_utils",
+        "@pypi//torch",
+    ],
 )
 
 py_test(

@@ -29,6 +29,7 @@ py_library(
     deps = [
         ":mario_env",
         ":model",
+        "//yft_utils",
         "@pypi//numpy",
         "@pypi//torch",
     ],
@@ -102,6 +103,7 @@ py_test(
     deps = [
         ":jepa_rl_mario",
         ":model",
+        "//yft_utils",
         "@pypi//torch",
     ],
 )

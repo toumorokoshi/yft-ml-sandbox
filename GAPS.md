@@ -17,9 +17,22 @@ This document tracks identified performance gaps, pending features, and optimiza
 ## 2. JEPA RL Mario Environment Baseline & Agent Training
 
 - **Status**: In Progress
-- **Description**: A Gymnasium RL environment scaffold and baseline DQN training loop have been created under `jepa_rl_mario` using `MarioModel`. Next steps include transitioning from basic CNN to ViT/JEPA architecture.
+- **Description**: A Gymnasium RL environment scaffold and baseline DQN training loop have been created under `jepa_rl_mario` using `MarioModel`. Hardware acceleration via `yft_utils.detect_device` has been enabled across NVIDIA, AMD ROCm, and Apple Metal MPS.
 - **Next Steps**:
   - Implement ViT attention layers and patch embeddings for visual state representation.
   - Design and train the JEPA model on the Mario track states to learn robust representation embeddings.
   - Implement planning/control loops based on the JEPA representation.
 
+## 3. Dynamic Multi-GPU Backend Pip Resolution on Linux (CUDA vs ROCm)
+
+- **Status**: Open
+- **Description**: On Linux, NVIDIA and AMD share the `linux_x86_64` OS/Arch tuple, but require different PyTorch wheels (compiled against CUDA vs ROCm). `rules_python` platform mapping currently maps `linux_x86_64` to the pinned Linux lockfile, while macOS maps to `osx_aarch64`.
+- **Next Steps**:
+  - Implement fine-grained Bazel constraint settings for `--//:gpu_backend=rocm` and `--//:gpu_backend=cuda` mapped to separate `requirements_lock_rocm.txt` and `requirements_lock_cuda.txt` via `pip.default`.
+
+## 4. Triton Kernel Metal Backend for macOS
+
+- **Status**: Open
+- **Description**: OpenAI Triton currently compiles to PTX (NVIDIA) and AMD GCN/RDNA assembly (ROCm). On macOS Apple Silicon, Triton kernels are not natively compilable to Metal shading language. Scripts like `triton_from_onnx` gracefully fall back to the PyTorch native reference execution on `mps`.
+- **Next Steps**:
+  - Explore integration with Apple MLX or custom Metal compute shaders for direct kernel parity on Apple Silicon.

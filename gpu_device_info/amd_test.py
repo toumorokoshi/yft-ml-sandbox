@@ -250,6 +250,8 @@ class GpuDeviceInfoUnitTest(unittest.TestCase):
         print("\n=== Integration Test GPU Info Result ===")
         print("Platform:", info.platform)
         print("ROCm/CUDA Version:", info.rocm_or_cuda_version)
+        if info.platform != PLATFORM_AMD:
+            self.skipTest(f"AMD GPU not available in current test environment (detected: {info.platform})")
         for i, dev in enumerate(info.devices):
             print(f"Device {i}:")
             print("  Name:", dev.name)

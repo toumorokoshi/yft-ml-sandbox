@@ -3,6 +3,8 @@ from typing import Callable, Optional, Sequence
 
 # Constants
 PLATFORM_AMD = "amd"
+PLATFORM_NVIDIA = "nvidia"
+PLATFORM_APPLE = "apple"
 PLATFORM_UNKNOWN = "unknown"
 NA_STRING = "N/A"
 

@@ -21,6 +21,16 @@ class TestMarioModel(unittest.TestCase):
         outputs = model(inputs)
         self.assertEqual(outputs.shape, (batch_size, num_actions))
 
+    def test_forward_on_device(self) -> None:
+        from yft_utils import detect_device
+
+        dev_info = detect_device()
+        model = MarioModel(num_actions=7).to(dev_info.device)
+        inputs = torch.randn(2, 1, 80, 80, device=dev_info.device)
+        outputs = model(inputs)
+        self.assertEqual(outputs.shape, (2, 7))
+        self.assertEqual(outputs.device.type, dev_info.device.type)
+
     def test_package_exports(self) -> None:
         from jepa_rl_mario import MarioEnv, MarioModel as PkgMarioModel, RenderMode
 

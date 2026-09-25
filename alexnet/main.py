@@ -12,6 +12,7 @@ from torch.utils.data import DataLoader
 
 from alexnet_core.model import NeuralNetwork, IMAGE_HEIGHT, IMAGE_WIDTH, SIZE, BATCH_SIZE
 from alexnet_core.recipe import train, test, TRAIN_TRANSFORM, TEST_TRANSFORM
+from yft_utils import detect_device
 
 # Constants
 NUM_CLASSIFICATIONS = 10
@@ -112,13 +113,10 @@ def train_model(args: argparse.Namespace) -> None:
     # it overfits to one at a time and does not progress past 10% accuracy.
     train_dataloader = DataLoader(training_data, batch_size=BATCH_SIZE, shuffle=True)
     test_dataloader = DataLoader(test_data, batch_size=BATCH_SIZE)
-    device = (
-        torch.accelerator.current_accelerator().type
-        if torch.accelerator.is_available()
-        else "cpu"
-    )
+    dev_info = detect_device(getattr(args, "device", None))
+    device = dev_info.device
     loss_fn = nn.CrossEntropyLoss()
-    print(f"Using device: {device}")
+    print(f"Using device: {device} ({dev_info.device_name}) on platform {dev_info.platform}")
     model = NeuralNetwork().to(device)
     print(f"Model structure: {model}")
     optimizer = torch.optim.SGD(
@@ -171,6 +169,13 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     )
     train_parser.add_argument(
         "--save-model", type=str, default=None, help="Path to save the trained model"
+    )
+    train_parser.add_argument(
+        "--device",
+        type=str,
+        default="auto",
+        choices=["auto", "cuda", "mps", "cpu"],
+        help="Target accelerator device (auto, cuda, mps, cpu)",
     )
 
     export_parser = subparsers.add_parser("export", help="Export a trained model")

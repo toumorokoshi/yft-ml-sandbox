@@ -1,11 +1,35 @@
 load("@rules_python//python:pip.bzl", "compile_pip_requirements")
+load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
 
-exports_files([
-    "requirements.txt",
-])
+string_flag(
+    name = "gpu_backend",
+    build_setting_default = "default",
+    values = [
+        "default",
+        "rocm",
+        "cuda",
+        "cpu",
+    ],
+)
+
+config_setting(
+    name = "is_rocm_backend",
+    flag_values = {":gpu_backend": "rocm"},
+)
+
+config_setting(
+    name = "is_cuda_backend",
+    flag_values = {":gpu_backend": "cuda"},
+)
 
 compile_pip_requirements(
     name = "requirements",
     src = "requirements.txt",
     requirements_txt = "requirements_lock.txt",
+)
+
+compile_pip_requirements(
+    name = "requirements_darwin",
+    src = "requirements.txt",
+    requirements_txt = "requirements_lock_darwin.txt",
 )

@@ -1,10 +1,11 @@
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("@rules_python//python:defs.bzl", "py_binary")
 
 py_binary(
     name = "main",
     srcs = ["main.py"],
     deps = [
         "//alexnet_core",
+        "//yft_utils",
         "@pypi//asciichartpy",
         "@pypi//onnx",
         "@pypi//onnxscript",
@@ -13,7 +14,13 @@ py_binary(
         "@pypi//scipy",
     ],
     visibility = ["//visibility:public"],
-    env = {
-        "HSA_OVERRIDE_GFX_VERSION": "11.0.0",
-    }
+    env = select({
+        "@platforms//os:osx": {
+            "PYTORCH_ENABLE_MPS_FALLBACK": "1",
+        },
+        "@platforms//os:linux": {
+            "HSA_OVERRIDE_GFX_VERSION": "11.0.0",
+        },
+        "//conditions:default": {},
+    }),
 )

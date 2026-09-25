@@ -15,9 +15,12 @@ use_repo(python, "python_3_12")
 
 pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
 pip.parse(
-    requirements_lock = "//:requirements_lock.txt",
-    python_version = PYTHON_VERSION,
     hub_name = "pypi",
+    python_version = PYTHON_VERSION,
+    requirements_by_platform = {
+        "//:requirements_lock.txt": "linux_x86_64",
+        "//:requirements_lock_darwin.txt": "osx_aarch64,osx_x86_64",
+    },
     experimental_extra_index_urls = ["https://download.pytorch.org/whl/rocm6.2"],
 )
 use_repo(pip, "pypi")
