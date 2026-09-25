@@ -24,19 +24,13 @@ config_setting(
 
 alias(
     name = "torch",
-    actual = select({
-        ":is_rocm_backend": "@pypi_rocm//torch",
-        "//conditions:default": "@pypi//torch",
-    }),
+    actual = "@pypi//torch",
     visibility = ["//visibility:public"],
 )
 
 alias(
     name = "torchvision",
-    actual = select({
-        ":is_rocm_backend": "@pypi_rocm//torchvision",
-        "//conditions:default": "@pypi//torchvision",
-    }),
+    actual = "@pypi//torchvision",
     visibility = ["//visibility:public"],
 )
 

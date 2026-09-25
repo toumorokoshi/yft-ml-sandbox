@@ -10,7 +10,7 @@ py_library(
     ],
     deps = [
         "@pypi//nes_py",
-        "//:torch",
+        "@pypi//torch",
     ],
     visibility = ["//visibility:public"],
 )
@@ -20,7 +20,7 @@ py_test(
     srcs = ["device_test.py"],
     deps = [
         ":yft_utils",
-        "//:torch",
+        "@pypi//torch",
     ],
 )
 

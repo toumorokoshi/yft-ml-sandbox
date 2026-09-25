@@ -4,7 +4,7 @@ py_binary(
     name = "example",
     srcs = ["example.py"],
     deps = [
-        "//:torch",
+        "@pypi//torch",
         "@pypi//torch_mlir",
         "@pypi//iree_turbine",
     ],

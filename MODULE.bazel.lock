@@ -97,6 +97,25 @@
   },
   "selectedYankedVersions": {},
   "moduleExtensions": {
+    "//:pypi_hub.bzl%pypi_selector": {
+      "general": {
+        "bzlTransitiveDigest": "s4wh9mODKzPoSoxYJSdMF8rReWsr9imMVKqndNB7xh4=",
+        "usagesDigest": "lM0nxXVzMFGloR2uSnYe6ADE9FA76c/oLIiRkEhp29o=",
+        "recordedFileInputs": {},
+        "recordedDirentsInputs": {},
+        "envVariables": {},
+        "generatedRepoSpecs": {
+          "pypi": {
+            "bzlFile": "@@//:pypi_hub.bzl",
+            "ruleClassName": "pypi_hub_repo",
+            "attributes": {
+              "requirements_lock": "@@//:requirements_lock_cuda.txt"
+            }
+          }
+        },
+        "recordedRepoMappingEntries": []
+      }
+    },
     "@@rules_jvm_external~//:extensions.bzl%maven": {
       "general": {
         "bzlTransitiveDigest": "twF5CTH+cMNcSDOS8HgBaxaIQ+FsdzZBKM0EbgJoYGU=",

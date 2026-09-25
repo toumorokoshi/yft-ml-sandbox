@@ -9,7 +9,7 @@ py_library(
     deps = [
         "@pypi//onnx",
         "@pypi//onnxscript",
-        "//:torch",
+        "@pypi//torch",
     ],
     visibility = ["//visibility:public"],
 )
@@ -42,6 +42,6 @@ py_test(
     deps = [
         ":main_lib",
         "@pypi//onnx",
-        "//:torch",
+        "@pypi//torch",
     ],
 )

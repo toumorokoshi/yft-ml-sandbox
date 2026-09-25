@@ -32,7 +32,7 @@ pip.parse(
         "//:requirements_lock_darwin.txt": "osx_aarch64,osx_x86_64",
     },
 )
-use_repo(pip, "pypi")
+use_repo(pip, "pypi_cuda")
 
 # AMD ROCm Hub
 pip.parse(
@@ -48,30 +48,17 @@ pip.parse(
     ],
 )
 use_repo(pip, "pypi_rocm")
+
+# Unified Hub Selector (@pypi)
+pypi_selector = use_extension("//:pypi_hub.bzl", "pypi_selector")
+use_repo(pypi_selector, "pypi")
 ```
 
-In root `BUILD.bazel`, dynamic aliases select the appropriate hub based on `--//:gpu_backend`:
-```bzl
-alias(
-    name = "torch",
-    actual = select({
-        ":is_rocm_backend": "@pypi_rocm//torch",
-        "//conditions:default": "@pypi//torch",
-    }),
-    visibility = ["//visibility:public"],
-)
+The `pypi_hub.bzl` module extension creates `@pypi`, dynamically multiplexing packages:
+- For `torch` and `torchvision`: Generates aliases that `select()` between `@pypi_rocm//...` (when `--//:gpu_backend=rocm`) and `@pypi_cuda//...` (by default or `--//:gpu_backend=cuda`).
+- For other packages: Directly forwards to `@pypi_cuda//...`.
 
-alias(
-    name = "torchvision",
-    actual = select({
-        ":is_rocm_backend": "@pypi_rocm//torchvision",
-        "//conditions:default": "@pypi//torchvision",
-    }),
-    visibility = ["//visibility:public"],
-)
-```
-
-All targets across the repository depend on `//:torch` and `//:torchvision`.
+Targets across the repository depend directly on `@pypi//torch` (standard rules_python idiom) without needing target-level changes. Root aliases `//:torch` and `//:torchvision` are also provided for convenience.
 
 ### 2.2 Environment Variables & Config Shortcuts
 Configured in `.bazelrc`:

@@ -18,7 +18,7 @@ py_library(
     name = "model",
     srcs = ["model.py"],
     deps = [
-        "//:torch",
+        "@pypi//torch",
     ],
     visibility = ["//visibility:public"],
 )
@@ -31,7 +31,7 @@ py_library(
         ":model",
         "//yft_utils",
         "@pypi//numpy",
-        "//:torch",
+        "@pypi//torch",
     ],
     visibility = ["//visibility:public"],
 )
@@ -91,7 +91,7 @@ py_test(
         ":model",
         ":train_lib",
         "@pypi//numpy",
-        "//:torch",
+        "@pypi//torch",
     ],
 )
 
@@ -122,7 +122,7 @@ py_test(
         ":jepa_rl_mario",
         ":model",
         "//yft_utils",
-        "//:torch",
+        "@pypi//torch",
     ],
 )
 

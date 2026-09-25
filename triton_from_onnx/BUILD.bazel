@@ -15,7 +15,7 @@ py_library(
     srcs = ["interpreter.py"],
     deps = [
         "@pypi//onnx",
-        "//:torch",
+        "@pypi//torch",
     ],
     visibility = ["//visibility:public"],
 )
@@ -38,7 +38,7 @@ py_test(
         ":interpreter_lib",
         ":main",
         "//yft_utils",
-        "//:torch",
+        "@pypi//torch",
     ],
     env = GPU_ENV,
 )
