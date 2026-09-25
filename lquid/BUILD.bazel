@@ -57,7 +57,7 @@ py_binary(
     main = "run_triton_kernel.py",
     deps = [
         "//onnx_simple_linear:model_lib",
-        "@pypi//torch",
+        "//:torch",
     ],
     env = {
         "HSA_OVERRIDE_GFX_VERSION": "11.0.0",

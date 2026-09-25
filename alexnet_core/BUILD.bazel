@@ -4,8 +4,8 @@ py_library(
     name = "alexnet_core",
     srcs = ["model.py", "recipe.py"],
     deps = [
-        "@pypi//torch",
-        "@pypi//torchvision",
+        "//:torch",
+        "//:torchvision",
     ],
     visibility = ["//visibility:public"],
 )

@@ -30,10 +30,15 @@ test:linux --test_env=HSA_OVERRIDE_GFX_VERSION
 
 # Accelerator configuration shortcuts
 build:rocm --action_env=HSA_OVERRIDE_GFX_VERSION=11.0.0
+build:rocm --//:gpu_backend=rocm
 test:rocm --test_env=HSA_OVERRIDE_GFX_VERSION=11.0.0
+test:rocm --//:gpu_backend=rocm
 
 build:cuda --action_env=CUDA_VISIBLE_DEVICES=0
+build:cuda --//:gpu_backend=cuda
 test:cuda --test_env=CUDA_VISIBLE_DEVICES=0
+test:cuda --//:gpu_backend=cuda
 
 # Try to import user-specific configuration
 try-import %workspace%/.bazelrc.user
+

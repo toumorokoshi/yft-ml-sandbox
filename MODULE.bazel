@@ -18,7 +18,17 @@ pip.parse(
     hub_name = "pypi",
     python_version = PYTHON_VERSION,
     requirements_by_platform = {
-        "//:requirements_lock.txt": "linux_x86_64",
+        "//:requirements_lock_cuda.txt": "linux_x86_64",
+        "//:requirements_lock_darwin.txt": "osx_aarch64,osx_x86_64",
+    },
+)
+use_repo(pip, "pypi")
+
+pip.parse(
+    hub_name = "pypi_rocm",
+    python_version = PYTHON_VERSION,
+    requirements_by_platform = {
+        "//:requirements_lock_rocm.txt": "linux_x86_64",
         "//:requirements_lock_darwin.txt": "osx_aarch64,osx_x86_64",
     },
     extra_pip_args = [
@@ -26,7 +36,7 @@ pip.parse(
         "--find-links=https://download.pytorch.org/whl/rocm6.4",
     ],
 )
-use_repo(pip, "pypi")
+use_repo(pip, "pypi_rocm")
 
 bazel_dep(name = "rules_rust", version = "0.70.0")
 

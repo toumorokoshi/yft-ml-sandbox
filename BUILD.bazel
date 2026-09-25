@@ -22,10 +22,38 @@ config_setting(
     flag_values = {":gpu_backend": "cuda"},
 )
 
+alias(
+    name = "torch",
+    actual = select({
+        ":is_rocm_backend": "@pypi_rocm//torch",
+        "//conditions:default": "@pypi//torch",
+    }),
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "torchvision",
+    actual = select({
+        ":is_rocm_backend": "@pypi_rocm//torchvision",
+        "//conditions:default": "@pypi//torchvision",
+    }),
+    visibility = ["//visibility:public"],
+)
+
 compile_pip_requirements(
     name = "requirements",
     src = "requirements.txt",
-    requirements_txt = "requirements_lock.txt",
+    requirements_txt = "requirements_lock_cuda.txt",
+)
+
+compile_pip_requirements(
+    name = "requirements_rocm",
+    src = "requirements.txt",
+    extra_args = [
+        "--extra-index-url=https://download.pytorch.org/whl/rocm6.4",
+        "--find-links=https://download.pytorch.org/whl/rocm6.4",
+    ],
+    requirements_txt = "requirements_lock_rocm.txt",
 )
 
 compile_pip_requirements(
@@ -33,3 +61,4 @@ compile_pip_requirements(
     src = "requirements.txt",
     requirements_txt = "requirements_lock_darwin.txt",
 )
+

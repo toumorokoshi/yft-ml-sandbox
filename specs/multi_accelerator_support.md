@@ -12,26 +12,34 @@ Provide first-class, cross-platform execution of PyTorch models and Python scrip
 
 ## 2. Multi-Platform Bazel Architecture
 
-### 2.1 Pip Dependency Resolution
-Due to conflicting binary wheels, differing index URLs, and mutually exclusive SHA256 checksums, `rules_python` uses platform-specific lockfiles:
+### 2.1 Pip Dependency Resolution & Dual Pip Hubs
+Due to conflicting binary wheels, differing index URLs, and mutually exclusive SHA256 checksums on Linux, `rules_python` manages two distinct pip hubs alongside macOS support:
 
-- `requirements_lock.txt` (`linux_x86_64`): Pins Linux wheels including ROCm/CUDA support.
-- `requirements_lock_darwin.txt` (`osx_aarch64`, `osx_x86_64`): Pins macOS wheels with native Metal/MPS support.
+- `requirements_lock_cuda.txt` (`linux_x86_64`): Pins Linux wheels for standard PyPI and NVIDIA CUDA (PyTorch 2.9.1 with CUDA 12.8 runtime).
+- `requirements_lock_rocm.txt` (`linux_x86_64`): Pins Linux wheels for AMD ROCm 6.4 (PyTorch 2.9.1+rocm6.4 and pytorch-triton-rocm from `https://download.pytorch.org/whl/rocm6.4`).
+- `requirements_lock_darwin.txt` (`osx_aarch64`, `osx_x86_64`): Pins macOS wheels with native Apple Silicon Metal/MPS support.
 
-In `MODULE.bazel` and `requirements_lock.txt`:
-ROCm wheels are downloaded from PyTorch's specialized wheel index (`https://download.pytorch.org/whl/rocm6.4`). Index and link options are placed directly at the top of `requirements_lock.txt`:
-```txt
---extra-index-url https://download.pytorch.org/whl/rocm6.4
---find-links https://download.pytorch.org/whl/rocm6.4
-```
-And forwarded in `MODULE.bazel`:
+In `MODULE.bazel`:
 ```bzl
 pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
+
+# Standard PyPI / CUDA Hub
 pip.parse(
     hub_name = "pypi",
-    python_version = "3.12",
+    python_version = PYTHON_VERSION,
     requirements_by_platform = {
-        "//:requirements_lock.txt": "linux_x86_64",
+        "//:requirements_lock_cuda.txt": "linux_x86_64",
+        "//:requirements_lock_darwin.txt": "osx_aarch64,osx_x86_64",
+    },
+)
+use_repo(pip, "pypi")
+
+# AMD ROCm Hub
+pip.parse(
+    hub_name = "pypi_rocm",
+    python_version = PYTHON_VERSION,
+    requirements_by_platform = {
+        "//:requirements_lock_rocm.txt": "linux_x86_64",
         "//:requirements_lock_darwin.txt": "osx_aarch64,osx_x86_64",
     },
     extra_pip_args = [
@@ -39,8 +47,31 @@ pip.parse(
         "--find-links=https://download.pytorch.org/whl/rocm6.4",
     ],
 )
-use_repo(pip, "pypi")
+use_repo(pip, "pypi_rocm")
 ```
+
+In root `BUILD.bazel`, dynamic aliases select the appropriate hub based on `--//:gpu_backend`:
+```bzl
+alias(
+    name = "torch",
+    actual = select({
+        ":is_rocm_backend": "@pypi_rocm//torch",
+        "//conditions:default": "@pypi//torch",
+    }),
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "torchvision",
+    actual = select({
+        ":is_rocm_backend": "@pypi_rocm//torchvision",
+        "//conditions:default": "@pypi//torchvision",
+    }),
+    visibility = ["//visibility:public"],
+)
+```
+
+All targets across the repository depend on `//:torch` and `//:torchvision`.
 
 ### 2.2 Environment Variables & Config Shortcuts
 Configured in `.bazelrc`:
@@ -49,10 +80,14 @@ Configured in `.bazelrc`:
   `test:macos --test_env=PYTORCH_ENABLE_MPS_FALLBACK=1`
 - **AMD ROCm**:
   `build:rocm --action_env=HSA_OVERRIDE_GFX_VERSION=11.0.0`
+  `build:rocm --//:gpu_backend=rocm`
   `test:rocm --test_env=HSA_OVERRIDE_GFX_VERSION=11.0.0`
+  `test:rocm --//:gpu_backend=rocm`
 - **NVIDIA CUDA**:
   `build:cuda --action_env=CUDA_VISIBLE_DEVICES=0`
+  `build:cuda --//:gpu_backend=cuda`
   `test:cuda --test_env=CUDA_VISIBLE_DEVICES=0`
+  `test:cuda --//:gpu_backend=cuda`
 
 In build files (`jepa_rl_mario`, `alexnet`, `alexnet_dvgs`, `triton_from_onnx`), target `env` is configured via `select()`:
 ```bzl

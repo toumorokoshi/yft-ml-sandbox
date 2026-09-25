@@ -9,8 +9,8 @@ py_library(
         "@pypi//asciichartpy",
         "@pypi//onnx",
         "@pypi//onnxscript",
-        "@pypi//torch",
-        "@pypi//torchvision",
+        "//:torch",
+        "//:torchvision",
         "@pypi//scipy",
     ],
     visibility = ["//visibility:public"],
@@ -39,6 +39,6 @@ py_test(
     srcs = ["main_test.py"],
     deps = [
         ":main_lib",
-        "@pypi//torch",
+        "//:torch",
     ],
 )

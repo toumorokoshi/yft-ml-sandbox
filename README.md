@@ -66,7 +66,8 @@ bazel test //gpu_device_info:all
 
 ## Updating Dependencies
 
-- **Linux (AMD ROCm / NVIDIA CUDA)**: `bazel run //:requirements.update`
+- **Linux (NVIDIA CUDA / Standard PyPI)**: `bazel run //:requirements.update`
+- **Linux (AMD ROCm 6.4)**: `bazel run //:requirements_rocm.update`
 - **macOS (Apple Silicon)**: `bazel run //:requirements_darwin.update`
 
 ---

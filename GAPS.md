@@ -25,10 +25,13 @@ This document tracks identified performance gaps, pending features, and optimiza
 
 ## 3. Dynamic Multi-GPU Backend Pip Resolution on Linux (CUDA vs ROCm)
 
-- **Status**: Open
-- **Description**: On Linux, NVIDIA and AMD share the `linux_x86_64` OS/Arch tuple, but require different PyTorch wheels (compiled against CUDA vs ROCm). `rules_python` platform mapping currently maps `linux_x86_64` to the pinned Linux lockfile, while macOS maps to `osx_aarch64`.
-- **Next Steps**:
-  - Implement fine-grained Bazel constraint settings for `--//:gpu_backend=rocm` and `--//:gpu_backend=cuda` mapped to separate `requirements_lock_rocm.txt` and `requirements_lock_cuda.txt` via `pip.default`.
+- **Status**: Resolved
+- **Description**: On Linux, NVIDIA and AMD share the `linux_x86_64` OS/Arch tuple, but require different PyTorch wheels (compiled against CUDA vs ROCm). `rules_python` platform mapping evaluates per-platform lockfiles by OS and architecture.
+- **Resolution**:
+  - Implemented dual pip hubs in `MODULE.bazel`: `@pypi` (standard PyPI / CUDA wheels using `requirements_lock_cuda.txt`) and `@pypi_rocm` (PyTorch ROCm 6.4 wheels using `requirements_lock_rocm.txt`).
+  - Added build setting `--//:gpu_backend` in the root `BUILD.bazel` with `:is_rocm_backend` and `:is_cuda_backend` config settings.
+  - Linked `.bazelrc` config flags `--config=rocm` and `--config=cuda` to `--//:gpu_backend=rocm` and `--//:gpu_backend=cuda`.
+  - Exposed root aliases `//:torch` and `//:torchvision` with `actual = select({":is_rocm_backend": "@pypi_rocm//...", "//conditions:default": "@pypi//..."})`. Targets across the workspace consume `//:torch` and dynamically receive the matching accelerator package.
 
 ## 4. Triton Kernel Metal Backend for macOS
 
