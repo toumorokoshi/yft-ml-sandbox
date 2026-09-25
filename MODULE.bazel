@@ -21,6 +21,10 @@ pip.parse(
         "//:requirements_lock.txt": "linux_x86_64",
         "//:requirements_lock_darwin.txt": "osx_aarch64,osx_x86_64",
     },
+    extra_pip_args = [
+        "--extra-index-url=https://download.pytorch.org/whl/rocm6.4",
+        "--find-links=https://download.pytorch.org/whl/rocm6.4",
+    ],
 )
 use_repo(pip, "pypi")
 

@@ -5,6 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Final, Optional
 
+import os
+import sys
+
+# On AMD RDNA 3 / 3.5 APUs (such as gfx1150 / Radeon 890M), ROCm requires HSA_OVERRIDE_GFX_VERSION
+if sys.platform.startswith("linux"):
+    os.environ.setdefault("HSA_OVERRIDE_GFX_VERSION", "11.0.0")
+
 try:
     import torch
     HAS_TORCH = True

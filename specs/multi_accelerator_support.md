@@ -18,7 +18,13 @@ Due to conflicting binary wheels, differing index URLs, and mutually exclusive S
 - `requirements_lock.txt` (`linux_x86_64`): Pins Linux wheels including ROCm/CUDA support.
 - `requirements_lock_darwin.txt` (`osx_aarch64`, `osx_x86_64`): Pins macOS wheels with native Metal/MPS support.
 
-In `MODULE.bazel`:
+In `MODULE.bazel` and `requirements_lock.txt`:
+ROCm wheels are downloaded from PyTorch's specialized wheel index (`https://download.pytorch.org/whl/rocm6.4`). Index and link options are placed directly at the top of `requirements_lock.txt`:
+```txt
+--extra-index-url https://download.pytorch.org/whl/rocm6.4
+--find-links https://download.pytorch.org/whl/rocm6.4
+```
+And forwarded in `MODULE.bazel`:
 ```bzl
 pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
 pip.parse(
@@ -28,6 +34,10 @@ pip.parse(
         "//:requirements_lock.txt": "linux_x86_64",
         "//:requirements_lock_darwin.txt": "osx_aarch64,osx_x86_64",
     },
+    extra_pip_args = [
+        "--extra-index-url=https://download.pytorch.org/whl/rocm6.4",
+        "--find-links=https://download.pytorch.org/whl/rocm6.4",
+    ],
 )
 use_repo(pip, "pypi")
 ```
@@ -44,7 +54,7 @@ Configured in `.bazelrc`:
   `build:cuda --action_env=CUDA_VISIBLE_DEVICES=0`
   `test:cuda --test_env=CUDA_VISIBLE_DEVICES=0`
 
-In build files (`alexnet`, `alexnet_dvgs`, `triton_from_onnx`), target `env` is configured via `select()`:
+In build files (`jepa_rl_mario`, `alexnet`, `alexnet_dvgs`, `triton_from_onnx`), target `env` is configured via `select()`:
 ```bzl
 env = select({
     "@platforms//os:osx": {
@@ -56,6 +66,8 @@ env = select({
     "//conditions:default": {},
 })
 ```
+
+Additionally, `yft_utils.device` proactively sets `HSA_OVERRIDE_GFX_VERSION="11.0.0"` before `import torch` on Linux systems to enable instant out-of-the-box hardware acceleration on RDNA 3 / 3.5 APUs (such as AMD Radeon 890M / gfx1150).
 
 ---
 

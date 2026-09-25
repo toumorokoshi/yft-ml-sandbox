@@ -54,6 +54,15 @@ py_binary(
         ":main_lib",
     ],
     visibility = ["//visibility:public"],
+    env = select({
+        "@platforms//os:osx": {
+            "PYTORCH_ENABLE_MPS_FALLBACK": "1",
+        },
+        "@platforms//os:linux": {
+            "HSA_OVERRIDE_GFX_VERSION": "11.0.0",
+        },
+        "//conditions:default": {},
+    }),
 )
 
 py_binary(
@@ -63,6 +72,15 @@ py_binary(
         ":train_lib",
     ],
     visibility = ["//visibility:public"],
+    env = select({
+        "@platforms//os:osx": {
+            "PYTORCH_ENABLE_MPS_FALLBACK": "1",
+        },
+        "@platforms//os:linux": {
+            "HSA_OVERRIDE_GFX_VERSION": "11.0.0",
+        },
+        "//conditions:default": {},
+    }),
 )
 
 py_test(
