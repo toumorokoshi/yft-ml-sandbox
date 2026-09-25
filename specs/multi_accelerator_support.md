@@ -28,7 +28,6 @@ pip.parse(
         "//:requirements_lock.txt": "linux_x86_64",
         "//:requirements_lock_darwin.txt": "osx_aarch64,osx_x86_64",
     },
-    experimental_extra_index_urls = ["https://download.pytorch.org/whl/rocm6.2"],
 )
 use_repo(pip, "pypi")
 ```
@@ -88,3 +87,4 @@ Composed of three modular readers implementing `GPUPlatformReader`:
   - Integrated with `detect_device()` and `--device` argument.
 - **`triton_from_onnx`**:
   - Automatically branches: executes Triton GPU kernels on NVIDIA CUDA and AMD ROCm, while running the PyTorch reference interpreter on macOS (MPS) and CPU without crashing on CUDA profiler activities.
+

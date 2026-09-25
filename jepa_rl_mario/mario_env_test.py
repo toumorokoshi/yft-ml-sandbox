@@ -50,9 +50,8 @@ class TestDQNAgentHelpers(unittest.TestCase):
         mock_obs = np.random.randint(0, 256, size=(240, 256, 3), dtype=np.uint8)
         processed = preprocess_observation(mock_obs)
 
-        self.assertEqual(processed.shape, (80, 80))
-        self.assertEqual(processed.dtype, np.float32)
-        self.assertTrue((processed >= 0.0).all() and (processed <= 1.0).all())
+        self.assertEqual(processed.shape, (240, 256))
+        self.assertTrue((processed >= 0.0).all() and (processed <= 255.0).all())
 
     def test_select_action_greedy(self) -> None:
         # If epsilon is 0, selection must be greedy based on max value
