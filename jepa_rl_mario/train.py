@@ -3,11 +3,8 @@
 from __future__ import annotations
 
 import argparse
-import os
 import random
-import signal
-import threading
-from typing import Any, Final, Optional
+from typing import Final, Optional
 
 import numpy as np
 import torch
@@ -16,7 +13,22 @@ import torch.optim as optim
 
 from jepa_rl_mario.mario_env import MarioEnv
 from jepa_rl_mario.model import MarioModel
-from yft_utils import detect_device
+from yft_utils import (
+    CHECKPOINT_KEY_EPISODES,
+    CHECKPOINT_KEY_EPSILON,
+    CHECKPOINT_KEY_MODEL,
+    CHECKPOINT_KEY_OPTIMIZER,
+    CHECKPOINT_KEY_TARGET_MODEL,
+    GracefulInterruptHandler,
+    apply_checkpoint_state,
+    compute_total_episodes,
+    create_checkpoint,
+    detect_device,
+    extract_checkpoint,
+    load_checkpoint,
+    resolve_checkpoint_save_path,
+    save_checkpoint,
+)
 
 # Constants (Rule 5)
 NUM_ACTIONS: Final[int] = 7
@@ -29,139 +41,6 @@ WIDTH: Final[int] = 256
 DEFAULT_EPISODES: Final[int] = 5
 DEFAULT_STEPS: Final[int] = 500
 
-CHECKPOINT_KEY_MODEL: Final[str] = "model_state_dict"
-CHECKPOINT_KEY_TARGET_MODEL: Final[str] = "target_model_state_dict"
-CHECKPOINT_KEY_OPTIMIZER: Final[str] = "optimizer_state_dict"
-CHECKPOINT_KEY_EPSILON: Final[str] = "epsilon"
-CHECKPOINT_KEY_EPISODES: Final[str] = "episodes"
-
-
-def create_checkpoint(
-    model_state_dict: dict[str, Any],
-    target_state_dict: dict[str, Any],
-    optimizer_state_dict: Optional[dict[str, Any]],
-    epsilon: float,
-    episodes: int,
-) -> dict[str, Any]:
-    """Pure function to construct a checkpoint dictionary from model and training states."""
-    checkpoint: dict[str, Any] = {
-        CHECKPOINT_KEY_MODEL: model_state_dict,
-        CHECKPOINT_KEY_TARGET_MODEL: target_state_dict,
-        CHECKPOINT_KEY_EPSILON: epsilon,
-        CHECKPOINT_KEY_EPISODES: episodes,
-    }
-    if optimizer_state_dict is not None:
-        checkpoint[CHECKPOINT_KEY_OPTIMIZER] = optimizer_state_dict
-    return checkpoint
-
-
-def extract_checkpoint(
-    checkpoint: dict[str, Any],
-) -> tuple[dict[str, Any], Optional[dict[str, Any]], Optional[dict[str, Any]], Optional[float], Optional[int]]:
-    """Pure function to validate and extract state dicts and metadata from a checkpoint dictionary."""
-    if CHECKPOINT_KEY_MODEL not in checkpoint:
-        raise KeyError(f"Checkpoint missing required key: '{CHECKPOINT_KEY_MODEL}'")
-    model_state = checkpoint[CHECKPOINT_KEY_MODEL]
-    target_state = checkpoint.get(CHECKPOINT_KEY_TARGET_MODEL)
-    optimizer_state = checkpoint.get(CHECKPOINT_KEY_OPTIMIZER)
-    epsilon = checkpoint.get(CHECKPOINT_KEY_EPSILON)
-    episodes = checkpoint.get(CHECKPOINT_KEY_EPISODES)
-    return model_state, target_state, optimizer_state, epsilon, episodes
-
-
-def apply_checkpoint_state(
-    q_network: nn.Module,
-    checkpoint: dict[str, Any],
-    target_network: Optional[nn.Module] = None,
-    optimizer: Optional[optim.Optimizer] = None,
-) -> tuple[Optional[float], Optional[int]]:
-    """Pure helper function to apply checkpoint state dicts to networks and optimizer."""
-    model_state, target_state, optimizer_state, epsilon, episodes = extract_checkpoint(checkpoint)
-    q_network.load_state_dict(model_state)
-    if target_network is not None:
-        if target_state is not None:
-            target_network.load_state_dict(target_state)
-        else:
-            target_network.load_state_dict(model_state)
-    if optimizer is not None and optimizer_state is not None:
-        optimizer.load_state_dict(optimizer_state)
-    return epsilon, episodes
-
-
-def save_checkpoint(
-    checkpoint_path: str,
-    checkpoint: dict[str, Any],
-) -> None:
-    """IO wrapper function to save checkpoint data structure to filesystem."""
-    parent_dir = os.path.dirname(checkpoint_path)
-    if parent_dir:
-        os.makedirs(parent_dir, exist_ok=True)
-    torch.save(checkpoint, checkpoint_path)
-
-
-def load_checkpoint(
-    checkpoint_path: str,
-    device: Optional[torch.device] = None,
-) -> dict[str, Any]:
-    """IO wrapper function to load checkpoint data structure from filesystem."""
-    if not os.path.isfile(checkpoint_path):
-        raise FileNotFoundError(f"Checkpoint file not found: {checkpoint_path}")
-    return torch.load(checkpoint_path, map_location=device, weights_only=False)
-
-
-def resolve_checkpoint_save_path(
-    save_checkpoint_arg: Optional[str],
-    load_checkpoint_arg: Optional[str],
-    is_eval: bool,
-) -> Optional[str]:
-    """Pure function to determine the target path for saving checkpoints."""
-    if save_checkpoint_arg:
-        return save_checkpoint_arg
-    if load_checkpoint_arg and not is_eval:
-        return load_checkpoint_arg
-    return None
-
-
-def compute_total_episodes(prior_episodes: Optional[int], episodes_completed: int) -> int:
-    """Pure function to calculate total completed episodes across sessions."""
-    return (prior_episodes or 0) + episodes_completed
-
-
-class GracefulInterruptHandler:
-    """Context manager for handling SIGINT gracefully to complete the current episode."""
-
-    def __init__(self) -> None:
-        self.interrupted: bool = False
-        self._original_handler: Any = None
-        self._installed: bool = False
-
-    def __enter__(self) -> GracefulInterruptHandler:
-        self.interrupted = False
-        if threading.current_thread() is threading.main_thread():
-            try:
-                self._original_handler = signal.getsignal(signal.SIGINT)
-                signal.signal(signal.SIGINT, self._handle_signal)
-                self._installed = True
-            except (ValueError, AttributeError):
-                self._installed = False
-        return self
-
-    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        if self._installed and self._original_handler is not None:
-            try:
-                signal.signal(signal.SIGINT, self._original_handler)
-            except (ValueError, AttributeError):
-                pass
-
-    def _handle_signal(self, signum: int, frame: Any) -> None:
-        if self.interrupted:
-            print("\nForcefully interrupting immediately...")
-            raise KeyboardInterrupt
-        self.interrupted = True
-        print(
-            "\nInterrupt received (Ctrl+C). Completing current episode before saving and exiting... "
-            "(Press Ctrl+C again to abort immediately)"
-        )
 
 
 
@@ -348,14 +227,21 @@ def main(argv: Optional[list[str]] = None) -> None:
             if args.load_checkpoint:
                 print(f"Loading checkpoint from: {args.load_checkpoint}")
                 checkpoint = load_checkpoint(args.load_checkpoint, device=dev_info.device)
-                loaded_eps, loaded_episodes = apply_checkpoint_state(
-                    q_network=q_network,
+                metadata = apply_checkpoint_state(
                     checkpoint=checkpoint,
-                    target_network=target_network,
+                    model=q_network,
                     optimizer=optimizer if not args.eval else None,
                 )
+                target_state = checkpoint.get(CHECKPOINT_KEY_TARGET_MODEL)
+                if target_state is not None:
+                    target_network.load_state_dict(target_state)
+                else:
+                    target_network.load_state_dict(q_network.state_dict())
+
+                loaded_eps = metadata.get(CHECKPOINT_KEY_EPSILON)
+                loaded_episodes = metadata.get(CHECKPOINT_KEY_EPISODES)
                 if loaded_eps is not None:
-                    epsilon = loaded_eps
+                    epsilon = float(loaded_eps)
                 print(
                     f"Loaded checkpoint successfully (resumed epsilon={epsilon:.2f}, "
                     f"prior episodes={loaded_episodes or 0})"

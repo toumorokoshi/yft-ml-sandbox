@@ -44,8 +44,8 @@ class TestTrainCheckpointDataStructures(unittest.TestCase):
 
         checkpoint = create_checkpoint(
             model_state_dict=mock_model_state,
-            target_state_dict=mock_target_state,
             optimizer_state_dict=mock_optimizer_state,
+            target_model_state_dict=mock_target_state,
             epsilon=TEST_EPSILON,
             episodes=TEST_EPISODES,
         )
@@ -59,11 +59,9 @@ class TestTrainCheckpointDataStructures(unittest.TestCase):
 
     def test_create_checkpoint_without_optimizer(self) -> None:
         mock_model_state = {"layer.weight": torch.tensor([DUMMY_TENSOR_VAL_1])}
-        mock_target_state = {"layer.weight": torch.tensor([DUMMY_TENSOR_VAL_2])}
 
         checkpoint = create_checkpoint(
             model_state_dict=mock_model_state,
-            target_state_dict=mock_target_state,
             optimizer_state_dict=None,
             epsilon=TEST_EPSILON,
             episodes=TEST_EPISODES,
@@ -74,22 +72,20 @@ class TestTrainCheckpointDataStructures(unittest.TestCase):
 
     def test_extract_checkpoint_valid(self) -> None:
         mock_model_state = {"w": torch.tensor([1.0])}
-        mock_target_state = {"w": torch.tensor([2.0])}
         mock_opt_state = {"state": {}}
         checkpoint = {
             CHECKPOINT_KEY_MODEL: mock_model_state,
-            CHECKPOINT_KEY_TARGET_MODEL: mock_target_state,
+            CHECKPOINT_KEY_TARGET_MODEL: {"w": torch.tensor([2.0])},
             CHECKPOINT_KEY_OPTIMIZER: mock_opt_state,
             CHECKPOINT_KEY_EPSILON: TEST_EPSILON,
             CHECKPOINT_KEY_EPISODES: TEST_EPISODES,
         }
 
-        m_state, t_state, o_state, eps, ep_count = extract_checkpoint(checkpoint)
+        m_state, o_state, metadata = extract_checkpoint(checkpoint)
         self.assertEqual(m_state, mock_model_state)
-        self.assertEqual(t_state, mock_target_state)
         self.assertEqual(o_state, mock_opt_state)
-        self.assertEqual(eps, TEST_EPSILON)
-        self.assertEqual(ep_count, TEST_EPISODES)
+        self.assertEqual(metadata[CHECKPOINT_KEY_EPSILON], TEST_EPSILON)
+        self.assertEqual(metadata[CHECKPOINT_KEY_EPISODES], TEST_EPISODES)
 
     def test_extract_checkpoint_missing_model_key_raises(self) -> None:
         invalid_checkpoint = {CHECKPOINT_KEY_EPSILON: 0.5}
@@ -109,21 +105,21 @@ class TestTrainCheckpointDataStructures(unittest.TestCase):
 
         checkpoint = create_checkpoint(
             model_state_dict=source_net.state_dict(),
-            target_state_dict=source_net.state_dict(),
             optimizer_state_dict=optimizer.state_dict(),
+            target_model_state_dict=source_net.state_dict(),
             epsilon=0.25,
             episodes=10,
         )
 
-        eps, ep_count = apply_checkpoint_state(
-            q_network=q_net,
+        metadata = apply_checkpoint_state(
             checkpoint=checkpoint,
-            target_network=target_net,
+            model=q_net,
             optimizer=optimizer,
         )
+        target_net.load_state_dict(checkpoint[CHECKPOINT_KEY_TARGET_MODEL])
 
-        self.assertEqual(eps, 0.25)
-        self.assertEqual(ep_count, 10)
+        self.assertEqual(metadata.get(CHECKPOINT_KEY_EPSILON), 0.25)
+        self.assertEqual(metadata.get(CHECKPOINT_KEY_EPISODES), 10)
         for param in q_net.parameters():
             self.assertTrue(torch.all(param == 7.0))
         for param in target_net.parameters():
@@ -229,7 +225,6 @@ class TestTrainCheckpointIntegration(unittest.TestCase):
 
         checkpoint_data = create_checkpoint(
             model_state_dict=model.state_dict(),
-            target_state_dict=model.state_dict(),
             optimizer_state_dict=optimizer.state_dict(),
             epsilon=0.33,
             episodes=7,
@@ -246,10 +241,10 @@ class TestTrainCheckpointIntegration(unittest.TestCase):
 
             # Validate loaded checkpoint
             new_model = MarioModel(num_actions=3, height=80, width=80)
-            eps, eps_count = apply_checkpoint_state(new_model, loaded)
+            metadata = apply_checkpoint_state(loaded, model=new_model)
 
-            self.assertEqual(eps, 0.33)
-            self.assertEqual(eps_count, 7)
+            self.assertEqual(metadata.get(CHECKPOINT_KEY_EPSILON), 0.33)
+            self.assertEqual(metadata.get(CHECKPOINT_KEY_EPISODES), 7)
             for p1, p2 in zip(model.parameters(), new_model.parameters()):
                 self.assertTrue(torch.equal(p1, p2))
 
