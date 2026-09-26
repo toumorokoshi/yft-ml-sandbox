@@ -157,6 +157,12 @@ class TestTrainCheckpointDataStructures(unittest.TestCase):
         self.assertEqual(custom_args.steps, 150)
         self.assertEqual(custom_args.device, "cpu")
 
+        # Test unified --checkpoint argument
+        unified_args = parse_args(["--checkpoint", "/path/unified.pt"])
+        self.assertEqual(unified_args.checkpoint, "/path/unified.pt")
+        self.assertEqual(unified_args.save_checkpoint, "/path/unified.pt")
+        self.assertEqual(unified_args.load_checkpoint, "/path/unified.pt")
+
     def test_resolve_checkpoint_save_path(self) -> None:
         # If save_checkpoint is given, it is preferred
         self.assertEqual(

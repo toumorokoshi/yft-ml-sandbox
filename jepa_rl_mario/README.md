@@ -20,6 +20,13 @@ bazel run //jepa_rl_mario:train -- --render-mode none --episodes 10 --save-check
 bazel run //jepa_rl_mario:train -- --render-mode none --load-checkpoint checkpoints/mario_dqn.pt --episodes 5 --save-checkpoint checkpoints/mario_dqn_updated.pt
 ```
 
+### Unified Checkpoint Flag (Load if exists, Auto-Save)
+
+```bash
+bazel run //jepa_rl_mario:train -- --render-mode human --checkpoint checkpoints/mario_dqn.pt
+```
+Loads the checkpoint if it exists (or starts fresh if it does not), and saves updated progress back to that path upon completion or `Ctrl+C`.
+
 ### Evaluation Run from Checkpoint (Greedy Actions, No Updates)
 
 ```bash

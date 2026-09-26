@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import random
 from typing import Final, Optional
 
@@ -39,7 +40,7 @@ REPLAY_SIZE: Final[int] = 10000
 HEIGHT: Final[int] = 240
 WIDTH: Final[int] = 256
 DEFAULT_EPISODES: Final[int] = 5
-DEFAULT_STEPS: Final[int] = 500
+DEFAULT_STEPS: Final[int] = 3000
 
 
 
@@ -169,6 +170,12 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         help="Target accelerator device (auto, cuda, mps, cpu)",
     )
     parser.add_argument(
+        "--checkpoint",
+        type=str,
+        default=None,
+        help="Unified path to load (if exists) and save training checkpoint",
+    )
+    parser.add_argument(
         "--save-checkpoint",
         type=str,
         default=None,
@@ -191,7 +198,13 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         default=None,
         help="Override exploration epsilon (float between 0.0 and 1.0)",
     )
-    return parser.parse_args(argv)
+    parsed = parser.parse_args(argv)
+    if parsed.checkpoint:
+        if parsed.save_checkpoint is None:
+            parsed.save_checkpoint = parsed.checkpoint
+        if parsed.load_checkpoint is None:
+            parsed.load_checkpoint = parsed.checkpoint
+    return parsed
 
 
 def main(argv: Optional[list[str]] = None) -> None:
@@ -225,27 +238,36 @@ def main(argv: Optional[list[str]] = None) -> None:
             epsilon_decay = 0.95
 
             if args.load_checkpoint:
-                print(f"Loading checkpoint from: {args.load_checkpoint}")
-                checkpoint = load_checkpoint(args.load_checkpoint, device=dev_info.device)
-                metadata = apply_checkpoint_state(
-                    checkpoint=checkpoint,
-                    model=q_network,
-                    optimizer=optimizer if not args.eval else None,
-                )
-                target_state = checkpoint.get(CHECKPOINT_KEY_TARGET_MODEL)
-                if target_state is not None:
-                    target_network.load_state_dict(target_state)
-                else:
-                    target_network.load_state_dict(q_network.state_dict())
+                if os.path.isfile(args.load_checkpoint):
+                    print(f"Loading checkpoint from: {args.load_checkpoint}")
+                    checkpoint = load_checkpoint(args.load_checkpoint, device=dev_info.device)
+                    metadata = apply_checkpoint_state(
+                        checkpoint=checkpoint,
+                        model=q_network,
+                        optimizer=optimizer if not args.eval else None,
+                    )
+                    target_state = checkpoint.get(CHECKPOINT_KEY_TARGET_MODEL)
+                    if target_state is not None:
+                        target_network.load_state_dict(target_state)
+                    else:
+                        target_network.load_state_dict(q_network.state_dict())
 
-                loaded_eps = metadata.get(CHECKPOINT_KEY_EPSILON)
-                loaded_episodes = metadata.get(CHECKPOINT_KEY_EPISODES)
-                if loaded_eps is not None:
-                    epsilon = float(loaded_eps)
-                print(
-                    f"Loaded checkpoint successfully (resumed epsilon={epsilon:.2f}, "
-                    f"prior episodes={loaded_episodes or 0})"
-                )
+                    loaded_eps = metadata.get(CHECKPOINT_KEY_EPSILON)
+                    loaded_episodes = metadata.get(CHECKPOINT_KEY_EPISODES)
+                    if loaded_eps is not None:
+                        epsilon = float(loaded_eps)
+                    print(
+                        f"Loaded checkpoint successfully (resumed epsilon={epsilon:.2f}, "
+                        f"prior episodes={loaded_episodes or 0})"
+                    )
+                elif args.eval:
+                    raise FileNotFoundError(
+                        f"Cannot evaluate: checkpoint file not found at '{args.load_checkpoint}'"
+                    )
+                else:
+                    print(
+                        f"Checkpoint not found at '{args.load_checkpoint}'. Starting training from scratch."
+                    )
 
             if args.epsilon is not None:
                 epsilon = args.epsilon
