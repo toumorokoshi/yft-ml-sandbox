@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import os
 import random
-from typing import Final, Optional
+from typing import Any, Final, Optional
 
 import numpy as np
 import torch
@@ -25,6 +26,85 @@ HEIGHT: Final[int] = 240
 WIDTH: Final[int] = 256
 DEFAULT_EPISODES: Final[int] = 5
 DEFAULT_STEPS: Final[int] = 500
+
+CHECKPOINT_KEY_MODEL: Final[str] = "model_state_dict"
+CHECKPOINT_KEY_TARGET_MODEL: Final[str] = "target_model_state_dict"
+CHECKPOINT_KEY_OPTIMIZER: Final[str] = "optimizer_state_dict"
+CHECKPOINT_KEY_EPSILON: Final[str] = "epsilon"
+CHECKPOINT_KEY_EPISODES: Final[str] = "episodes"
+
+
+def create_checkpoint(
+    model_state_dict: dict[str, Any],
+    target_state_dict: dict[str, Any],
+    optimizer_state_dict: Optional[dict[str, Any]],
+    epsilon: float,
+    episodes: int,
+) -> dict[str, Any]:
+    """Pure function to construct a checkpoint dictionary from model and training states."""
+    checkpoint: dict[str, Any] = {
+        CHECKPOINT_KEY_MODEL: model_state_dict,
+        CHECKPOINT_KEY_TARGET_MODEL: target_state_dict,
+        CHECKPOINT_KEY_EPSILON: epsilon,
+        CHECKPOINT_KEY_EPISODES: episodes,
+    }
+    if optimizer_state_dict is not None:
+        checkpoint[CHECKPOINT_KEY_OPTIMIZER] = optimizer_state_dict
+    return checkpoint
+
+
+def extract_checkpoint(
+    checkpoint: dict[str, Any],
+) -> tuple[dict[str, Any], Optional[dict[str, Any]], Optional[dict[str, Any]], Optional[float], Optional[int]]:
+    """Pure function to validate and extract state dicts and metadata from a checkpoint dictionary."""
+    if CHECKPOINT_KEY_MODEL not in checkpoint:
+        raise KeyError(f"Checkpoint missing required key: '{CHECKPOINT_KEY_MODEL}'")
+    model_state = checkpoint[CHECKPOINT_KEY_MODEL]
+    target_state = checkpoint.get(CHECKPOINT_KEY_TARGET_MODEL)
+    optimizer_state = checkpoint.get(CHECKPOINT_KEY_OPTIMIZER)
+    epsilon = checkpoint.get(CHECKPOINT_KEY_EPSILON)
+    episodes = checkpoint.get(CHECKPOINT_KEY_EPISODES)
+    return model_state, target_state, optimizer_state, epsilon, episodes
+
+
+def apply_checkpoint_state(
+    q_network: nn.Module,
+    checkpoint: dict[str, Any],
+    target_network: Optional[nn.Module] = None,
+    optimizer: Optional[optim.Optimizer] = None,
+) -> tuple[Optional[float], Optional[int]]:
+    """Pure helper function to apply checkpoint state dicts to networks and optimizer."""
+    model_state, target_state, optimizer_state, epsilon, episodes = extract_checkpoint(checkpoint)
+    q_network.load_state_dict(model_state)
+    if target_network is not None:
+        if target_state is not None:
+            target_network.load_state_dict(target_state)
+        else:
+            target_network.load_state_dict(model_state)
+    if optimizer is not None and optimizer_state is not None:
+        optimizer.load_state_dict(optimizer_state)
+    return epsilon, episodes
+
+
+def save_checkpoint(
+    checkpoint_path: str,
+    checkpoint: dict[str, Any],
+) -> None:
+    """IO wrapper function to save checkpoint data structure to filesystem."""
+    parent_dir = os.path.dirname(checkpoint_path)
+    if parent_dir:
+        os.makedirs(parent_dir, exist_ok=True)
+    torch.save(checkpoint, checkpoint_path)
+
+
+def load_checkpoint(
+    checkpoint_path: str,
+    device: Optional[torch.device] = None,
+) -> dict[str, Any]:
+    """IO wrapper function to load checkpoint data structure from filesystem."""
+    if not os.path.isfile(checkpoint_path):
+        raise FileNotFoundError(f"Checkpoint file not found: {checkpoint_path}")
+    return torch.load(checkpoint_path, map_location=device, weights_only=False)
 
 
 def preprocess_observation(obs: np.ndarray) -> np.ndarray:
@@ -73,6 +153,7 @@ def run_episode(
     batch_size: int,
     gamma: float,
     device: torch.device,
+    is_training: bool = True,
 ) -> float:
     """Wrapper function executing environment interactions (IO) and training steps."""
     obs, _ = env.reset()
@@ -96,33 +177,34 @@ def run_episode(
         next_state = preprocess_observation(next_obs)
         done = terminated or truncated
 
-        # 3. Store in replay buffer
-        replay_buffer.append((state, action, reward, next_state, float(done)))
-        if len(replay_buffer) > REPLAY_SIZE:
-            replay_buffer.pop(0)
+        # 3. Store in replay buffer & train if enabled
+        if is_training:
+            replay_buffer.append((state, action, reward, next_state, float(done)))
+            if len(replay_buffer) > REPLAY_SIZE:
+                replay_buffer.pop(0)
+
+            # 4. Optimize network
+            if len(replay_buffer) >= batch_size:
+                batch = random.sample(replay_buffer, batch_size)
+                b_states, b_actions, b_rewards, b_next_states, b_dones = zip(*batch)
+
+                loss = compute_loss(
+                    q_network,
+                    target_network,
+                    torch.tensor(np.array(b_states), dtype=torch.float32, device=device).unsqueeze(1),
+                    torch.tensor(b_actions, dtype=torch.long, device=device),
+                    torch.tensor(b_rewards, dtype=torch.float32, device=device),
+                    torch.tensor(np.array(b_next_states), dtype=torch.float32, device=device).unsqueeze(1),
+                    torch.tensor(b_dones, dtype=torch.float32, device=device),
+                    gamma,
+                )
+
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
 
         state = next_state
         total_reward += reward
-
-        # 4. Optimize network
-        if len(replay_buffer) >= batch_size:
-            batch = random.sample(replay_buffer, batch_size)
-            b_states, b_actions, b_rewards, b_next_states, b_dones = zip(*batch)
-
-            loss = compute_loss(
-                q_network,
-                target_network,
-                torch.tensor(np.array(b_states), dtype=torch.float32, device=device).unsqueeze(1),
-                torch.tensor(b_actions, dtype=torch.long, device=device),
-                torch.tensor(b_rewards, dtype=torch.float32, device=device),
-                torch.tensor(np.array(b_next_states), dtype=torch.float32, device=device).unsqueeze(1),
-                torch.tensor(b_dones, dtype=torch.float32, device=device),
-                gamma,
-            )
-
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
 
         if done:
             break
@@ -130,7 +212,8 @@ def run_episode(
     return total_reward
 
 
-def main() -> None:
+def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
+    """Parse command line arguments for Mario training."""
     parser = argparse.ArgumentParser(description="Train DQN on wrapped Mario environment")
     parser.add_argument(
         "--render-mode",
@@ -148,8 +231,34 @@ def main() -> None:
         choices=["auto", "cuda", "mps", "cpu"],
         help="Target accelerator device (auto, cuda, mps, cpu)",
     )
+    parser.add_argument(
+        "--save-checkpoint",
+        type=str,
+        default=None,
+        help="Optional path to save final training checkpoint",
+    )
+    parser.add_argument(
+        "--load-checkpoint",
+        type=str,
+        default=None,
+        help="Optional path to load initial checkpoint before training or evaluation",
+    )
+    parser.add_argument(
+        "--eval",
+        action="store_true",
+        help="Run in evaluation mode (no training updates, greedy actions)",
+    )
+    parser.add_argument(
+        "--epsilon",
+        type=float,
+        default=None,
+        help="Override exploration epsilon (float between 0.0 and 1.0)",
+    )
+    return parser.parse_args(argv)
 
-    args = parser.parse_args()
+
+def main(argv: Optional[list[str]] = None) -> None:
+    args = parse_args(argv)
 
     # Determine render mode passed to Gymnasium
     gym_render_mode = args.render_mode if args.render_mode in ["human", "rgb_array"] else "rgb_array"
@@ -172,28 +281,67 @@ def main() -> None:
     epsilon_min = 0.1
     epsilon_decay = 0.95
 
+    if args.load_checkpoint:
+        print(f"Loading checkpoint from: {args.load_checkpoint}")
+        checkpoint = load_checkpoint(args.load_checkpoint, device=dev_info.device)
+        loaded_eps, loaded_episodes = apply_checkpoint_state(
+            q_network=q_network,
+            checkpoint=checkpoint,
+            target_network=target_network,
+            optimizer=optimizer if not args.eval else None,
+        )
+        if loaded_eps is not None:
+            epsilon = loaded_eps
+        print(
+            f"Loaded checkpoint successfully (resumed epsilon={epsilon:.2f}, "
+            f"prior episodes={loaded_episodes or 0})"
+        )
+
+    if args.epsilon is not None:
+        epsilon = args.epsilon
+
+    if args.eval:
+        epsilon = 0.0
+        q_network.eval()
+        target_network.eval()
+        print("Running in evaluation mode (training disabled, epsilon=0.0)")
+
     try:
         for ep in range(args.episodes):
             reward = run_episode(
-                env,
-                q_network,
-                target_network,
-                optimizer,
-                replay_buffer,
-                epsilon,
-                args.steps,
-                BATCH_SIZE,
-                GAMMA,
-                dev_info.device,
+                env=env,
+                q_network=q_network,
+                target_network=target_network,
+                optimizer=optimizer,
+                replay_buffer=replay_buffer,
+                epsilon=epsilon,
+                max_steps=args.steps,
+                batch_size=BATCH_SIZE,
+                gamma=GAMMA,
+                device=dev_info.device,
+                is_training=not args.eval,
             )
-            epsilon = max(epsilon_min, epsilon * epsilon_decay)
+            if not args.eval:
+                epsilon = max(epsilon_min, epsilon * epsilon_decay)
             print(f"Episode {ep+1}/{args.episodes} | Total Reward: {reward:.1f} | Epsilon: {epsilon:.2f}")
 
             # Soft update target network
-            if ep % 2 == 0:
+            if not args.eval and ep % 2 == 0:
                 target_network.load_state_dict(q_network.state_dict())
     finally:
         env.close()
+
+    if args.save_checkpoint:
+        print(f"Saving final training checkpoint to: {args.save_checkpoint}")
+        checkpoint = create_checkpoint(
+            model_state_dict=q_network.state_dict(),
+            target_state_dict=target_network.state_dict(),
+            optimizer_state_dict=optimizer.state_dict(),
+            epsilon=epsilon,
+            episodes=args.episodes,
+        )
+        save_checkpoint(args.save_checkpoint, checkpoint)
+        print("Checkpoint saved successfully.")
 
 
 if __name__ == "__main__":

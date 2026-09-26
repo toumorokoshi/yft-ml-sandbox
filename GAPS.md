@@ -17,11 +17,12 @@ This document tracks identified performance gaps, pending features, and optimiza
 ## 2. JEPA RL Mario Environment Baseline & Agent Training
 
 - **Status**: In Progress
-- **Description**: A Gymnasium RL environment scaffold and baseline DQN training loop have been created under `jepa_rl_mario` using `MarioModel`. Hardware acceleration via `yft_utils.detect_device` has been enabled across NVIDIA, AMD ROCm, and Apple Metal MPS.
+- **Description**: A Gymnasium RL environment scaffold and baseline DQN training loop have been created under `jepa_rl_mario` using `MarioModel`. Hardware acceleration via `yft_utils.detect_device` has been enabled across NVIDIA, AMD ROCm, and Apple Metal MPS. Checkpointing (`--save-checkpoint`, `--load-checkpoint`, `--eval`) has been implemented to save models and resume or evaluate trained agents.
 - **Next Steps**:
   - Implement ViT attention layers and patch embeddings for visual state representation.
   - Design and train the JEPA model on the Mario track states to learn robust representation embeddings.
   - Implement planning/control loops based on the JEPA representation.
+
 
 ## 3. Dynamic Multi-GPU Backend Pip Resolution on Linux (CUDA vs ROCm)
 

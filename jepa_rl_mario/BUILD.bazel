@@ -126,5 +126,17 @@ py_test(
     ],
 )
 
+py_test(
+    name = "train_test",
+    srcs = ["train_test.py"],
+    deps = [
+        ":model",
+        ":train_lib",
+        "//yft_utils",
+        "@pypi//torch",
+    ],
+)
+
+
 
 

@@ -1,32 +1,43 @@
 # Jepa RL Mario
 
-## Example Command
+## Example Commands
 
-`bazel run //jepa_rl_mario:train -- --render-mode human --episodes 1 --steps 10000`
+### Basic Training
+
+```bash
+bazel run //jepa_rl_mario:train -- --render-mode human --episodes 1 --steps 10000
+```
+
+### Save Final Checkpoint
+
+```bash
+bazel run //jepa_rl_mario:train -- --render-mode none --episodes 10 --save-checkpoint checkpoints/mario_dqn.pt
+```
+
+### Resume Training from Checkpoint
+
+```bash
+bazel run //jepa_rl_mario:train -- --render-mode none --load-checkpoint checkpoints/mario_dqn.pt --episodes 5 --save-checkpoint checkpoints/mario_dqn_updated.pt
+```
+
+### Evaluation Run from Checkpoint (Greedy Actions, No Updates)
+
+```bash
+bazel run //jepa_rl_mario:train -- --render-mode human --load-checkpoint checkpoints/mario_dqn.pt --eval --episodes 1 --steps 5000
+```
 
 ## How does the reinforcement learning work?
 
-Primarily in `run_episode` in train.py.
+Primarily in `run_episode` in `train.py`.
 
-1. steps runs through a step
-2. obs is the numpy array with the RGB of the image. This seves as the input.
-3. preprocessed and reduced to grayscale.
-4. select_action introduces some random actions to introduce some entropy, allowing it to learn new actions.
-5. 5.
+1. Steps run through an environment step.
+2. `obs` is the numpy array with RGB pixels of the screen.
+3. Preprocessed and reduced to grayscale via `preprocess_observation`.
+4. `select_action` introduces random actions with probability `epsilon` to explore new actions, or takes greedy argmax Q-values.
+5. Transitions stored in replay buffer; batches sampled to compute MSE Bellman loss and update `q_network`.
 
 ## Thoughts on the Mario Model
 
-1. grayscale input images
-2. ViT for attention layers, this will extract feature embeddings. This should ensures that there are feature embeddings with the appropriate positions.
-   1. check: does the ViT need positional encodings?
-3. have an MLP decoder for actions?
-4. still introduce random actions for decodings?
-
-## How does the reinforcement learning work?
-
-Primarily in `run_episode` in train.py.
-
-1. steps runs through a step
-2. obs is the numpy array with the RGB of the image. This seves as the input.
-3. preprocessed and reduced to grayscale.
-4. select_action introduces some random actions to introduce some entropy, allowing it to learn new actions.
+1. Grayscale input images
+2. ViT for attention layers to extract feature embeddings with spatial awareness.
+3. MLP decoder for action values.
