@@ -10,8 +10,9 @@ order of operations.
 5. study the relevant documents.
 6. implement the change requested in the prompt.
 7. run linting and formatting before committing.
-8. run tests in modules that have been modified.
-9. Identify any remaining issues or features that need to be implemented
+8. run tests in bazel directories that have been modified.
+   1. Test modified modules and their subdirectories
+9.  Identify any remaining issues or features that need to be implemented
    1. include them in GAPS.md
 
 ## Branch cleanup
