@@ -26,6 +26,23 @@ bazel run //jepa_rl_mario:train -- --render-mode none --load-checkpoint checkpoi
 bazel run //jepa_rl_mario:train -- --render-mode human --load-checkpoint checkpoints/mario_dqn.pt --eval --episodes 1 --steps 5000
 ```
 
+### Graceful Interruption & Saving Progress (Ctrl+C)
+
+When pressing `Ctrl+C` (`SIGINT`) during training, the training script catches the interrupt, allows the current episode to complete cleanly, and automatically saves the checkpoint to `--save-checkpoint` (or updates `--load-checkpoint` if resuming):
+
+```bash
+# Start a long training run:
+bazel run //jepa_rl_mario:train -- --render-mode none --episodes 50 --save-checkpoint checkpoints/mario_dqn.pt
+
+# Press Ctrl+C at any time during an episode:
+# -> Script finishes the current episode
+# -> Saves checkpoint with cumulative episodes completed
+# -> Exits gracefully
+
+# Resume from where you left off (will automatically save back to the same file upon finish/interrupt):
+bazel run //jepa_rl_mario:train -- --render-mode none --episodes 50 --load-checkpoint checkpoints/mario_dqn.pt
+```
+
 ## How does the reinforcement learning work?
 
 Primarily in `run_episode` in `train.py`.

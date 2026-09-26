@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import os
 import random
+import signal
+import threading
 from typing import Any, Final, Optional
 
 import numpy as np
@@ -105,6 +107,62 @@ def load_checkpoint(
     if not os.path.isfile(checkpoint_path):
         raise FileNotFoundError(f"Checkpoint file not found: {checkpoint_path}")
     return torch.load(checkpoint_path, map_location=device, weights_only=False)
+
+
+def resolve_checkpoint_save_path(
+    save_checkpoint_arg: Optional[str],
+    load_checkpoint_arg: Optional[str],
+    is_eval: bool,
+) -> Optional[str]:
+    """Pure function to determine the target path for saving checkpoints."""
+    if save_checkpoint_arg:
+        return save_checkpoint_arg
+    if load_checkpoint_arg and not is_eval:
+        return load_checkpoint_arg
+    return None
+
+
+def compute_total_episodes(prior_episodes: Optional[int], episodes_completed: int) -> int:
+    """Pure function to calculate total completed episodes across sessions."""
+    return (prior_episodes or 0) + episodes_completed
+
+
+class GracefulInterruptHandler:
+    """Context manager for handling SIGINT gracefully to complete the current episode."""
+
+    def __init__(self) -> None:
+        self.interrupted: bool = False
+        self._original_handler: Any = None
+        self._installed: bool = False
+
+    def __enter__(self) -> GracefulInterruptHandler:
+        self.interrupted = False
+        if threading.current_thread() is threading.main_thread():
+            try:
+                self._original_handler = signal.getsignal(signal.SIGINT)
+                signal.signal(signal.SIGINT, self._handle_signal)
+                self._installed = True
+            except (ValueError, AttributeError):
+                self._installed = False
+        return self
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        if self._installed and self._original_handler is not None:
+            try:
+                signal.signal(signal.SIGINT, self._original_handler)
+            except (ValueError, AttributeError):
+                pass
+
+    def _handle_signal(self, signum: int, frame: Any) -> None:
+        if self.interrupted:
+            print("\nForcefully interrupting immediately...")
+            raise KeyboardInterrupt
+        self.interrupted = True
+        print(
+            "\nInterrupt received (Ctrl+C). Completing current episode before saving and exiting... "
+            "(Press Ctrl+C again to abort immediately)"
+        )
+
 
 
 def preprocess_observation(obs: np.ndarray) -> np.ndarray:
@@ -235,7 +293,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         "--save-checkpoint",
         type=str,
         default=None,
-        help="Optional path to save final training checkpoint",
+        help="Optional path to save final training checkpoint (defaults to --load-checkpoint if resuming)",
     )
     parser.add_argument(
         "--load-checkpoint",
@@ -260,88 +318,106 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
 def main(argv: Optional[list[str]] = None) -> None:
     args = parse_args(argv)
 
-    # Determine render mode passed to Gymnasium
-    gym_render_mode = args.render_mode if args.render_mode in ["human", "rgb_array"] else "rgb_array"
-    env = MarioEnv(render_mode=gym_render_mode)
-
-    # If the user chose "none", we override self.render_mode so env.render() is not called
-    if args.render_mode == "none":
-        env.render_mode = "none"
-
     dev_info = detect_device(args.device)
     print(f"Using device: {dev_info.device} ({dev_info.device_name}) on platform '{dev_info.platform}'")
 
-    q_network = MarioModel(num_actions=NUM_ACTIONS, height=HEIGHT, width=WIDTH).to(dev_info.device)
-    target_network = MarioModel(num_actions=NUM_ACTIONS, height=HEIGHT, width=WIDTH).to(dev_info.device)
-    target_network.load_state_dict(q_network.state_dict())
-    optimizer = optim.Adam(q_network.parameters(), lr=LR)
+    episodes_completed = 0
+    loaded_episodes: Optional[int] = None
+    save_path = resolve_checkpoint_save_path(args.save_checkpoint, args.load_checkpoint, args.eval)
 
-    replay_buffer: list = []
-    epsilon = 1.0
-    epsilon_min = 0.1
-    epsilon_decay = 0.95
+    with GracefulInterruptHandler() as interrupt_handler:
+        # Determine render mode passed to Gymnasium
+        gym_render_mode = args.render_mode if args.render_mode in ["human", "rgb_array"] else "rgb_array"
+        env = MarioEnv(render_mode=gym_render_mode)
 
-    if args.load_checkpoint:
-        print(f"Loading checkpoint from: {args.load_checkpoint}")
-        checkpoint = load_checkpoint(args.load_checkpoint, device=dev_info.device)
-        loaded_eps, loaded_episodes = apply_checkpoint_state(
-            q_network=q_network,
-            checkpoint=checkpoint,
-            target_network=target_network,
-            optimizer=optimizer if not args.eval else None,
-        )
-        if loaded_eps is not None:
-            epsilon = loaded_eps
-        print(
-            f"Loaded checkpoint successfully (resumed epsilon={epsilon:.2f}, "
-            f"prior episodes={loaded_episodes or 0})"
-        )
+        # If the user chose "none", we override self.render_mode so env.render() is not called
+        if args.render_mode == "none":
+            env.render_mode = "none"
 
-    if args.epsilon is not None:
-        epsilon = args.epsilon
+        try:
+            q_network = MarioModel(num_actions=NUM_ACTIONS, height=HEIGHT, width=WIDTH).to(dev_info.device)
+            target_network = MarioModel(num_actions=NUM_ACTIONS, height=HEIGHT, width=WIDTH).to(dev_info.device)
+            target_network.load_state_dict(q_network.state_dict())
+            optimizer = optim.Adam(q_network.parameters(), lr=LR)
 
-    if args.eval:
-        epsilon = 0.0
-        q_network.eval()
-        target_network.eval()
-        print("Running in evaluation mode (training disabled, epsilon=0.0)")
+            replay_buffer: list = []
+            epsilon = 1.0
+            epsilon_min = 0.1
+            epsilon_decay = 0.95
 
-    try:
-        for ep in range(args.episodes):
-            reward = run_episode(
-                env=env,
-                q_network=q_network,
-                target_network=target_network,
-                optimizer=optimizer,
-                replay_buffer=replay_buffer,
+            if args.load_checkpoint:
+                print(f"Loading checkpoint from: {args.load_checkpoint}")
+                checkpoint = load_checkpoint(args.load_checkpoint, device=dev_info.device)
+                loaded_eps, loaded_episodes = apply_checkpoint_state(
+                    q_network=q_network,
+                    checkpoint=checkpoint,
+                    target_network=target_network,
+                    optimizer=optimizer if not args.eval else None,
+                )
+                if loaded_eps is not None:
+                    epsilon = loaded_eps
+                print(
+                    f"Loaded checkpoint successfully (resumed epsilon={epsilon:.2f}, "
+                    f"prior episodes={loaded_episodes or 0})"
+                )
+
+            if args.epsilon is not None:
+                epsilon = args.epsilon
+
+            if args.eval:
+                epsilon = 0.0
+                q_network.eval()
+                target_network.eval()
+                print("Running in evaluation mode (training disabled, epsilon=0.0)")
+
+            for ep in range(args.episodes):
+                if interrupt_handler.interrupted:
+                    break
+
+                reward = run_episode(
+                    env=env,
+                    q_network=q_network,
+                    target_network=target_network,
+                    optimizer=optimizer,
+                    replay_buffer=replay_buffer,
+                    epsilon=epsilon,
+                    max_steps=args.steps,
+                    batch_size=BATCH_SIZE,
+                    gamma=GAMMA,
+                    device=dev_info.device,
+                    is_training=not args.eval,
+                )
+                if not args.eval:
+                    epsilon = max(epsilon_min, epsilon * epsilon_decay)
+                episodes_completed += 1
+                print(f"Episode {ep+1}/{args.episodes} | Total Reward: {reward:.1f} | Epsilon: {epsilon:.2f}")
+
+                # Soft update target network
+                if not args.eval and ep % 2 == 0:
+                    target_network.load_state_dict(q_network.state_dict())
+
+                if interrupt_handler.interrupted:
+                    print(f"\nGracefully stopped training after completing episode {ep+1}/{args.episodes}.")
+                    break
+        except KeyboardInterrupt:
+            print("\nTraining interrupted by user.")
+        finally:
+            env.close()
+
+        if save_path and (episodes_completed > 0 or not interrupt_handler.interrupted):
+            total_episodes = compute_total_episodes(loaded_episodes, episodes_completed)
+            print(f"Saving training checkpoint ({total_episodes} total episodes) to: {save_path}")
+            checkpoint = create_checkpoint(
+                model_state_dict=q_network.state_dict(),
+                target_state_dict=target_network.state_dict(),
+                optimizer_state_dict=optimizer.state_dict(),
                 epsilon=epsilon,
-                max_steps=args.steps,
-                batch_size=BATCH_SIZE,
-                gamma=GAMMA,
-                device=dev_info.device,
-                is_training=not args.eval,
+                episodes=total_episodes,
             )
-            if not args.eval:
-                epsilon = max(epsilon_min, epsilon * epsilon_decay)
-            print(f"Episode {ep+1}/{args.episodes} | Total Reward: {reward:.1f} | Epsilon: {epsilon:.2f}")
-
-            # Soft update target network
-            if not args.eval and ep % 2 == 0:
-                target_network.load_state_dict(q_network.state_dict())
-    finally:
-        env.close()
-
-    if args.save_checkpoint:
-        print(f"Saving final training checkpoint to: {args.save_checkpoint}")
-        checkpoint = create_checkpoint(
-            model_state_dict=q_network.state_dict(),
-            target_state_dict=target_network.state_dict(),
-            optimizer_state_dict=optimizer.state_dict(),
-            epsilon=epsilon,
-            episodes=args.episodes,
-        )
-        save_checkpoint(args.save_checkpoint, checkpoint)
-        print("Checkpoint saved successfully.")
+            save_checkpoint(save_path, checkpoint)
+            print("Checkpoint saved successfully.")
+        elif interrupt_handler.interrupted and not args.eval:
+            print("No checkpoint path specified (--save-checkpoint), skipping checkpoint save.")
 
 
 if __name__ == "__main__":

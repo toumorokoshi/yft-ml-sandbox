@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import signal
 import tempfile
 import unittest
 
@@ -15,11 +16,14 @@ from jepa_rl_mario.train import (
     CHECKPOINT_KEY_MODEL,
     CHECKPOINT_KEY_OPTIMIZER,
     CHECKPOINT_KEY_TARGET_MODEL,
+    GracefulInterruptHandler,
     apply_checkpoint_state,
+    compute_total_episodes,
     create_checkpoint,
     extract_checkpoint,
     load_checkpoint,
     parse_args,
+    resolve_checkpoint_save_path,
     save_checkpoint,
 )
 
@@ -156,6 +160,64 @@ class TestTrainCheckpointDataStructures(unittest.TestCase):
         self.assertEqual(custom_args.episodes, 20)
         self.assertEqual(custom_args.steps, 150)
         self.assertEqual(custom_args.device, "cpu")
+
+    def test_resolve_checkpoint_save_path(self) -> None:
+        # If save_checkpoint is given, it is preferred
+        self.assertEqual(
+            resolve_checkpoint_save_path(
+                save_checkpoint_arg="/tmp/save.pt",
+                load_checkpoint_arg="/tmp/load.pt",
+                is_eval=False,
+            ),
+            "/tmp/save.pt",
+        )
+        # If only load_checkpoint is given and not in eval mode, it saves back to load_checkpoint
+        self.assertEqual(
+            resolve_checkpoint_save_path(
+                save_checkpoint_arg=None,
+                load_checkpoint_arg="/tmp/load.pt",
+                is_eval=False,
+            ),
+            "/tmp/load.pt",
+        )
+        # In eval mode without save_checkpoint, no saving path is resolved
+        self.assertIsNone(
+            resolve_checkpoint_save_path(
+                save_checkpoint_arg=None,
+                load_checkpoint_arg="/tmp/load.pt",
+                is_eval=True,
+            )
+        )
+        # Neither argument given
+        self.assertIsNone(
+            resolve_checkpoint_save_path(
+                save_checkpoint_arg=None,
+                load_checkpoint_arg=None,
+                is_eval=False,
+            )
+        )
+
+    def test_compute_total_episodes(self) -> None:
+        self.assertEqual(compute_total_episodes(prior_episodes=None, episodes_completed=5), 5)
+        self.assertEqual(compute_total_episodes(prior_episodes=10, episodes_completed=4), 14)
+        self.assertEqual(compute_total_episodes(prior_episodes=0, episodes_completed=0), 0)
+
+    def test_graceful_interrupt_handler_signal(self) -> None:
+        handler = GracefulInterruptHandler()
+        self.assertFalse(handler.interrupted)
+
+        # First signal sets interrupted flag without raising
+        handler._handle_signal(signal.SIGINT, None)
+        self.assertTrue(handler.interrupted)
+
+        # Second signal immediately raises KeyboardInterrupt for forced abort
+        with self.assertRaises(KeyboardInterrupt):
+            handler._handle_signal(signal.SIGINT, None)
+
+    def test_graceful_interrupt_handler_context(self) -> None:
+        with GracefulInterruptHandler() as handler:
+            self.assertFalse(handler.interrupted)
+
 
 
 class TestTrainCheckpointIntegration(unittest.TestCase):
